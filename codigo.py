@@ -127,6 +127,101 @@ class Mg1:
                 print(e)
 
 
+class Mm1:
+    """
+    Modelo de Fila M/M/1 e M/M/s
+    ---------------------
+    Fórmulas principais para M/M/1:
+        ρ = λ / μ
+        L = λ / (μ - λ)
+        Lq = (λ²) / (μ(μ - λ))
+        W = 1 / (μ - λ)
+        Wq = λ / (μ(μ - λ))
+
+    Fórmulas para M/M/s > 1:
+        P0 = [Σ_{n=0}^{s-1} (λ/μ)^n / n!] + (λ/μ)^s / s! * (1 - ρ)^2
+        Pn = (λ/μ)^n / n! * P0, for n <= s
+        Pn = (λ/μ)^n / s^n * P0, for n > s
+        L = λ / μ * (1 + (λ/μ)^s / s! * (1 - ρ)^2)
+        Lq = λ² / (μ(μ - λ))
+        W = 1 / (μ - λ)
+        Wq = Lq / λ
+    """
+    def __init__(self, lam, mi, s = None, var = None):
+        """
+        Inicializa o modelo com seus parâmetros básicos.
+        lam = Taxa media de chegada(λ) para o sistema de filas
+        mi : Taxa media de atendimento (μ)
+        s : Numero de servidores (para M/M/s)
+        var : Variancia do tempo de atendimento 
+        """
+        self.lam = lam # 
+        self.mi = mi 
+        self.s = s
+        self.var = var
+
+        #Calculando p 
+        self.rho = lam / (mi*s if s else mi) # p para MM1 ou mms se o valor de s nao for definodo
+        #Verificaçao de estabilidade do sistema
+        if self.rho >= 1:
+            raise ValueError("O sistema está instável (ρ >= 1). Ajuste as taxas de chegada ou atendimento.")
+        
+        def mm1(self):
+            """
+            Calcula as metricas do modelo M/M/1
+            """
+            #Numero medio de clientes do sistema(L)
+            L = self.lam / (self.mi - self.lam)
+            #Numero medio de clientes na fila
+            Lq = (math.pow(self.lam, 2) / (self.mi * (self.mi - self.lam)))
+            #Tempo medio no sistema(W)
+            W = 1 / (self.mi - self.lam)
+            #Tempo medio na fila(Wq)
+            Wq = self.lam / (self.mi * (self.mi - self.lam))
+            return L, Lq, W, Wq
+        
+        def mms(self):
+            """
+            Calcula as metricas do modelo M/M/s
+            """
+            #Calculo de P0
+            P0 = sum((math.pow(self.lam / self.mi, n) / factorial(n)) for n in range(self.s))
+            P0 += (math.pow(self.lam / self.mi, self.s) / (factorial(self.s) * (1 - self.rho)))
+            #Probabilidade do sistema estar vazio
+            P0 = 1 / P0
+            #Numero medio de clientes na fila(Lq) no sistema(L) para M/M/s > 1
+            L = self.lam / self.mi * (1 + (self.lam / self.mi) ** self.s / (math.factorial(self.s) * (1 - self.rho) ** 2))
+            Lq = (self.lam ** 2) / (self.mi * (self.mi - self.lam))
+            W = 1 / (self.mi - self.lam)
+            Wq = Lq / self.lam
+            return P0, L, Lq, W, Wq
+        
+        def resultado(self):
+            if self.s is None:
+                try:
+                    L, Lq, W, Wq = self.mm1()
+                    print(f"Modelo M/M/1:")
+                    print(f"Número médio de clientes no sistema (L): {L:.4f}")
+                    print(f"Número médio de clientes na fila (Lq): {Lq:.4f}")
+                    print(f"Tempo médio no sistema (W): {W:.4f}")
+                    print(f"Tempo médio na fila (Wq): {Wq:.4f}")
+                except ValueError as e:
+                    print(e)
+            else: #Se o numero de servidores for fornecido
+                try:
+                    P0, L, Lq, W, Wq = self.mms()
+                    print(f"Modelo M/M/{self.s}:")
+                    print(f"Probabilidade do sistema estar vazio (P0): {P0:.4f}")
+                    print(f"Número médio de clientes no sistema (L): {L:.4f}")
+                    print(f"Número médio de clientes na fila (Lq): {Lq:.4f}")
+                    print(f"Tempo médio no sistema (W): {W:.4f}")
+                    print(f"Tempo médio na fila (Wq): {Wq:.4f}")
+                except ValueError as e:
+                    print(e)
+            
+
+
+
 #Testando os códigos
 if __name__ == "__main__":
     # Exemplo sem prioridades
@@ -138,6 +233,17 @@ if __name__ == "__main__":
     # Exemplo com prioridades
     modelo_prioridades = Mg1(lam=3, mi=6, var=0.05, lam_list=[1, 1, 1], interrupt=True)
     modelo_prioridades.mg1_print()
+
+    print("\n" + "="*50 + "\n")
+
+    # Exemplo M/M/1
+    modelo_mm1 = Mm1(lam=2, mi=5)
+    modelo_mm1.resultado()
+    print("\n" + "="*50 + "\n")
+    # Exemplo M/M/s
+    modelo_mms = Mm1(lam=4, mi=3, s=2)
+    modelo_mms.resultado()
+                     
 
 
 
