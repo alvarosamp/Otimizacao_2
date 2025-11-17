@@ -602,78 +602,134 @@ class Mmsn:
 # Classe M/M/1 Prioridade Preemptiva (COM Interrupção)
 class Mm1PrioridadePreemptiva:
     """
-    Modelo de Fila M/M/1 com Prioridades COM Interrupção (Preemptivo)
-    (Ref: Teoria... MG1... p. 13, Ex. 1, S=1) 
+    M/M/1 com prioridades preemptivas (preemptive-resume).
+    Calcula métricas por-classe (λ_k·W_k) e acumuladas até k ((Σ_{j=1}^k λ_j)·W_k).
     """
     def __init__(self, lam_list, mi):
+        self.lam_list = list(lam_list)
+        self.mi = float(mi)
+        self.n_classes = len(self.lam_list)
+        self.rho_list = [l / self.mi for l in self.lam_list]
+        self.rho_total = sum(self.rho_list)
+        if self.rho_total >= 1:
+            raise ValueError(f"Sistema instável: ρ_total = {self.rho_total:.6f} >= 1")
+
+    def calcular_metricas(self):
+        resultados = []
+        soma_lam = 0.0  # Σ_{j=1}^{k} λ_j (usado para acumulados)
+        soma_lam_prev = 0.0  # Σ_{j=1}^{k-1} λ_j
+
+        for k in range(self.n_classes):
+            lam_k = self.lam_list[k]
+            soma_lam = soma_lam_prev + lam_k  # Σ até k
+
+            # denominares
+            denom1 = self.mi - soma_lam_prev          # μ - Σ_{j=1}^{k-1} λ_j
+            denom2 = self.mi - soma_lam               # μ - Σ_{j=1}^{k} λ_j
+
+            if denom1 <= 0 or denom2 <= 0:
+                Wk = float("inf")
+                Wqk = float("inf")
+            else:
+                if k == 0:
+                    Wk = 1.0 / denom2                # classe 1
+                else:
+                    Wk = self.mi / (denom1 * denom2) # k >= 2
+                Wqk = Wk - 1.0 / self.mi
+
+            # métricas por-classe
+            Lk_por = lam_k * Wk
+            Lqk_por = lam_k * Wqk
+
+            # métricas acumuladas até k
+            Lk_acum = soma_lam * Wk
+            Lqk_acum = soma_lam * Wqk
+
+            resultados.append({
+                "classe": k+1,
+                "lambda_k": lam_k,
+                "soma_lambdas_ate_k": soma_lam,
+                "Wk": Wk,
+                "Wqk": Wqk,
+                "Lk_por": Lk_por,
+                "Lqk_por": Lqk_por,
+                "Lk_acum": Lk_acum,
+                "Lqk_acum": Lqk_acum,
+            })
+
+            soma_lam_prev = soma_lam  # atualiza para próxima iteração
+
+        return resultados
+
+    def resultado(self, casas=4):
+        print("--- M/M/1 Prioridade Preemptiva ---")
+        print(f"μ = {self.mi}, ρ_total = {self.rho_total:.6f}\n")
+        res = self.calcular_metricas()
+        for r in res:
+            print(f"Classe {r['classe']} (λ={r['lambda_k']}, Σλ≤k={r['soma_lambdas_ate_k']:.4f}):")
+            print(f"  W{r['classe']}  = {r['Wk']:.{casas}f}")
+            print(f"  Wq{r['classe']} = {r['Wqk']:.{casas}f}")
+            print(f"  L{r['classe']} (por-classe) = {r['Lk_por']:.{casas}f}")
+            print(f"  Lq{r['classe']} (por-classe)= {r['Lqk_por']:.{casas}f}")
+            print(f"  L{r['classe']} (acumul.) = {r['Lk_acum']:.{casas}f}")
+            print(f"  Lq{r['classe']} (acumul.)= {r['Lqk_acum']:.{casas}f}\n")
+
+class Mm_s_PrioridadeNaoPreemptiva:
+    """
+    Modelo M/M/s com prioridades não-preemptivas.
+    Calcula métricas aproximadas por classe (Wq, W, L, Lq) assumindo E[S] = 1/μ.
+    """
+    def __init__(self, lam_list, mi, s):
+        """
+        lam_list: lista de λ por classe
+        mi: taxa de atendimento por servidor
+        s: número de servidores
+        """
         self.lam_list = lam_list
         self.mi = mi
-        self.n_classes = len(lam_list)
-        
-        # ρ para cada prioridade
-        self.rho_list = [l / self.mi for l in lam_list]
-        # ρ total
+        self.s = s
+        self.rho_list = [l / (mi * s) for l in lam_list]  # utilização por classe
         self.rho_total = sum(self.rho_list)
-        
         if self.rho_total >= 1:
-            raise ValueError(f"O sistema está instável (ρ_total = {self.rho_total:.4f} >= 1).")
-            
+            raise ValueError(f"Sistema instável: ρ_total = {self.rho_total:.4f} >= 1")
+
     def calcular_metricas(self):
         """
-        Calcula as métricas W, Wq, L, Lq para cada classe.
-        Usa as fórmulas simplificadas para S=1 do Exemplo 1 
+        Retorna uma lista de métricas por classe: [(Lq, L, Wq, W, rho_k), ...]
         """
         resultados = []
-        lam_acumulada = 0.0
-        
-        for i in range(self.n_classes):
-            lam_i = self.lam_list[i]
-            
-            # Cálculo de W_k (Tempo no sistema)
-            # W_k = μ / [ (μ - Σλ_{j=1}^{k-1}) * (μ - Σλ_{j=1}^{k}) ]
-            
-            # Termo (μ - Σλ_{j=1}^{k-1})
-            denominador_1 = self.mi - lam_acumulada
-            
-            # Atualiza λ acumulada para esta classe
-            lam_acumulada += lam_i
-            
-            # Termo (μ - Σλ_{j=1}^{k})
-            denominador_2 = self.mi - lam_acumulada
-            
-            if denominador_1 <= 0 or denominador_2 <= 0:
-                w_k = float('inf')
+        r_sum_anterior = 0.0
+
+        # Aproximação similar à usada no M/G/1 não-preemptivo
+        for i, lam_k in enumerate(self.lam_list):
+            rho_k = lam_k / (self.mi * self.s)
+            r_sum_atual = r_sum_anterior + rho_k
+
+            denominador = 2 * (1 - r_sum_anterior) * (1 - r_sum_atual)
+            if (1 - r_sum_atual) < 1e-9:
                 wq_k = float('inf')
-                l_k = float('inf')
+                w_k = float('inf')
                 lq_k = float('inf')
+                l_k = float('inf')
             else:
-                if i == 0:
-                     # W_1 = 1 / (μ - λ_1) [cite: 171]
-                    w_k = 1 / denominador_2
-                else:
-                    # W_k = μ / (denominador_1 * denominador_2) [cite: 174, 175]
-                    w_k = self.mi / (denominador_1 * denominador_2)
-            
-                # Métricas derivadas
-                wq_k = w_k - (1 / self.mi) # Wq = W - E(S) [cite: 172]
-                l_k = lam_i * w_k         # L = λ * W [cite: 173]
-                lq_k = lam_i * wq_k
-            
-            resultados.append((lq_k, l_k, wq_k, w_k))
-            
+                # Aproximação do Wq usando fórmula tipo Pollaczek-Khintchine adaptada
+                a = lam_k / self.mi  # ou outro ajuste
+                wq_k = a / denominador
+                w_k = wq_k + (1 / self.mi)
+                lq_k = lam_k * wq_k
+                l_k = lam_k * w_k
+
+            resultados.append((lq_k, l_k, wq_k, w_k, rho_k))
+            r_sum_anterior = r_sum_atual
+
         return resultados
 
     def resultado(self):
-        """Exibe os resultados formatados no console."""
-        print(f"--- Modelo M/M/1 com Prioridades (COM Interrupção) ---")
-        print(f"Taxa de utilização TOTAL (ρ_total): {self.rho_total:.4f}")
-        try:
-            resultados = self.calcular_metricas()
-            for i, (lq_k, l, wq, w) in enumerate(resultados):
-                print(f"\nPrioridade {i+1} (λ_{i+1} = {self.lam_list[i]}, ρ_{i+1} = {self.rho_list[i]:.4f}):")
-                print(f"  Número médio na fila (Lq_{i+1}): {lq_k:.4f}")
-                print(f"  Número médio no sistema (L_{i+1}): {l:.4f}")
-                print(f"  Tempo médio na fila (Wq_{i+1}): {wq:.4f}")
-                print(f"  Tempo médio no sistema (W_{i+1}): {w:.4f}")
-        except ValueError as e:
-            print(e)
+        print(f"--- M/M/{self.s} Prioridade Não-Preemptiva ---")
+        print(f"ρ_total = {self.rho_total:.4f}")
+        res = self.calcular_metricas()
+        for i, (lq, l, wq, w, rho_k) in enumerate(res):
+            print(f"Classe {i+1} (ρ_{i+1} = {rho_k:.4f}):")
+            print(f"  Lq = {lq:.4f}, L = {l:.4f}")
+            print(f"  Wq = {wq:.4f}, W = {w:.4f}\n")
+

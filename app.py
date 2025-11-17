@@ -340,6 +340,8 @@ class FilaApp:
         # Botão Grande para rodar a lista
         btn_run_list = ttk.Button(tab, text="RODAR LISTA DE EXERCÍCIOS", command=lambda: self.capture_output(rodar_testes, out_text))
         btn_run_list.pack(pady=10, ipadx=20, ipady=10)
+    
+    
 
 if __name__ == "__main__":
     root = tk.Tk()
