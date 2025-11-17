@@ -91,33 +91,84 @@ class FilaApp:
         tab = ttk.Frame(self.notebook)
         self.notebook.add(tab, text="M/M/s (Infinito)")
         
-        # Inputs
+        # Inputs Frame
         input_frame = ttk.Frame(tab, padding=10)
         input_frame.pack(fill='x')
         
-        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=0, column=0, sticky='w')
+        # Linha 0: Lambda
+        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
         ent_lam = ttk.Entry(input_frame)
         ent_lam.grid(row=0, column=1, padx=5, pady=5)
         
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w')
+        # Linha 1: Mu
+        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
         ent_mi = ttk.Entry(input_frame)
         ent_mi.grid(row=1, column=1, padx=5, pady=5)
         
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w')
+        # Linha 2: Servidores (s)
+        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
         ent_s = ttk.Entry(input_frame)
         ent_s.insert(0, "1")
         ent_s.grid(row=2, column=1, padx=5, pady=5)
         
+        ttk.Separator(input_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=5)
+
+        # Linha 4: Tempo N para Probabilidade W>t e Wq>t
+        ttk.Label(input_frame, text="Tempo t (em Minutos) para P(W>t) e P(Wq>t):").grid(row=4, column=0, sticky='w', padx=5, pady=5)
+        ent_t_minutos = ttk.Entry(input_frame)
+        ent_t_minutos.insert(0, "60") 
+        ent_t_minutos.grid(row=4, column=1, padx=5, pady=5)
+        
+        # --- NOVO CAMPO ---
+        # Linha 5: Número n de clientes para Pn
+        ttk.Label(input_frame, text="Número n de Clientes para Pn:").grid(row=5, column=0, sticky='w', padx=5, pady=5)
+        ent_n_clientes = ttk.Entry(input_frame)
+        ent_n_clientes.insert(0, "5") # Exemplo: probabilidade de 5 clientes estarem no sistema
+        ent_n_clientes.grid(row=5, column=1, padx=5, pady=5)
+        # --- FIM NOVO CAMPO ---
+        
+        # Área de Output
         out_text = self.create_output_area(tab)
         
         def run():
+            # 1. Captura e validação de entradas
             l = float(ent_lam.get())
             m = float(ent_mi.get())
             s = int(ent_s.get())
-            modelo = Mm(lam=l, mi=m, s=s)
-            modelo.resultado()
+            t_min = float(ent_t_minutos.get()) 
+            t_horas = t_min / 60.0 # Converte t para horas
 
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=3, column=0, columnspan=2, pady=10)
+            # --- NOVO VALOR ---
+            n_clientes = int(ent_n_clientes.get())
+            # ------------------
+            
+            modelo = Mm(lam=l, mi=m, s=s)
+            
+            # 2. Imprime as métricas básicas (L, Lq, W, Wq, P0, etc)
+            modelo.resultado() 
+            
+            # 3. Imprime as probabilidades
+            print("-" * 30)
+            print("--- Cálculos de Probabilidade ---")
+            
+            # Pn
+            prob_n = modelo.prob_n_clientes(n=n_clientes)
+            print(f"P({n_clientes}) (Prob. de {n_clientes} clientes no sistema): {prob_n:.4f} ({prob_n*100:.2f}%)")
+
+            # P(Wq > t)
+            prob_wq = modelo.prob_wq_maior_que_t(t=t_horas)
+            print(f"P(Wq > {t_min:.2f} min) (Esperar na Fila): {prob_wq:.4f} ({prob_wq*100:.2f}%)")
+
+            # P(W > t)
+            if s == 1:
+                prob_w = modelo.prob_w_maior_que_t(t=t_horas)
+                print(f"P(W > {t_min:.2f} min) (Ficar no Sistema): {prob_w:.4f} ({prob_w*100:.2f}%)")
+            else:
+                print(f"P(W > {t_min:.2f} min) (Ficar no Sistema): Fórmula simplificada P(W>t) indisponível para M/M/{modelo.s} (s>1).")
+
+
+        # Botão Calcular
+        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=6, column=0, columnspan=2, pady=10)
 
     # --- ABA 2: M/G/1 e Prioridades ---
     def create_tab_mg1(self):
@@ -142,8 +193,7 @@ class FilaApp:
         ttk.Separator(input_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=5)
 
         # Campos
-        lbl_lam = ttk.Label(input_frame, text="Taxa de Chegada (λ):")
-        lbl_lam.grid(row=4, column=0, sticky='w')
+        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=4, column=0, sticky='w')
         ent_lam = ttk.Entry(input_frame)
         ent_lam.grid(row=4, column=1, padx=5, pady=2)
         ttk.Label(input_frame, text="* Para prioridades, use lista ex: 2, 4, 2", font=("Arial", 8)).grid(row=5, column=1, sticky='w')
@@ -166,6 +216,7 @@ class FilaApp:
             if mode == "simple":
                 lam = float(ent_lam.get())
                 var = float(ent_var.get())
+                # Chama a classe Mg1 para M/G/1 simples (sem lista de lambda)
                 modelo = Mg1(lam=lam, mi=mi, var=var)
                 modelo.mg1_print()
             
@@ -174,11 +225,16 @@ class FilaApp:
                 lam_str = ent_lam.get()
                 lam_list = [float(x.strip()) for x in lam_str.split(',') if x.strip()]
                 var = float(ent_var.get())
-                # Mg1 trata prioridade não preemptiva
+                # Chama a classe Mg1 para prioridade não preemptiva (com lista de lambda)
                 modelo = Mg1(lam=0, mi=mi, var=var, lam_list=lam_list, interrupt=False)
                 modelo.mg1_print()
                 
             elif mode == "priority_preempt":
+                try:
+                    Mm1PrioridadePreemptiva
+                except NameError:
+                    raise ValueError("A classe Mm1PrioridadePreemptiva não foi importada corretamente.")
+                
                 lam_str = ent_lam.get()
                 lam_list = [float(x.strip()) for x in lam_str.split(',') if x.strip()]
                 # Classe especifica Mm1PrioridadePreemptiva

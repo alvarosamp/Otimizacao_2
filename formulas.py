@@ -7,21 +7,19 @@ class Mg1:
     Modelo de Fila M/G/1 com e sem Prioridades 
     ---------------------
     Fórmulas sem prioridades (Pollaczek-Khintchine):
-    (Ref: Teoria... MG1... p. 5) [cite: 91, 92, 93]
+    (Ref: Teoria de Filas M/G/1)
         ρ  = λ / μ
-        Lq = (λ² * σ² + ρ²) / [2 * (1 - ρ)]
+        Lq = (λ² * E[S²]) / [2 * (1 - ρ)]
         L  = ρ + Lq
         Wq = Lq / λ
         W  = Wq + (1 / μ)
-
-    Fórmulas com prioridades (NÃO PREEMPTIVO, M/G/1):
-    (Ref: Teoria... MG1... p. 19, Ex. 2) [cite: 241, 242]
-        Assume E(S) e V(S) podem ser diferentes por classe (mi_list, var_list)
-        OU E(S)=1/μ e V(S)=var para todas (mi, var únicos)
     
-        A = Σ [λ_i * (V(S_i) + E(S_i)²)]
+    Fórmulas com prioridades (NÃO PREEMPTIVO, M/G/1 - K classes, K >= 2):
         Wq_k = A / [2 * (1 - R_{k-1}) * (1 - R_k)]
-        onde R_k = Σ_{i=1}^{k} ρ_i
+        onde R_k = Σ_{i=1}^{k} ρ_i e A = Σ_{i=1}^{m} [λ_i * E[S_i²]]
+        
+    Esta implementação assume E[S] = 1/μ e Var[S] = var (σ²) são os mesmos 
+    para TODAS as classes de prioridade.
     """
 
     def __init__(self, lam, mi, var, lam_list=None, interrupt=False):
@@ -31,25 +29,30 @@ class Mg1:
         Parâmetros:
         lam (float): Taxa média de chegada total (λ). *Ignorado se lam_list for fornecido.*
         mi (float): Taxa média de atendimento (μ).
-        var (float): Variância do tempo de atendimento (σ²).
+        var (float): Variância do tempo de atendimento (σ²). Deve ser >= 0.
         lam_list (list, opcional): Lista de taxas de chegada (λ_i) por classe de prioridade.
         interrupt (bool, opcional): Define se o modelo de prioridades é preemptivo (com interrupção).
-                                     *AVISO: M/G/1 Preemptivo não está implementado.*
+                                     *AVISO: M/G/1 Preemptivo (com interrupção) não está implementado.*
         """
-        self.mi = mi      # taxa média de atendimento (μ)
-        self.var = var    # variância do tempo de atendimento (σ²)
+        self.mi = mi     # Taxa média de atendimento (μ)
+        self.var = var    # Variância do tempo de atendimento (σ²)
         
-        if self.mi == 0:
-            raise ValueError("mi (taxa de atendimento) não pode ser zero")
+        if self.mi <= 0:
+            raise ValueError("mi (taxa de atendimento) deve ser um valor positivo.")
+        if self.var < 0:
+            raise ValueError("var (variância do tempo de atendimento, σ²) não pode ser negativa.")
+            
+        # Calcula E[S²] = Var[S] + E[S]² = σ² + (1/μ)²
+        self.e_s2 = self.var + math.pow(1 / self.mi, 2)
 
-        if lam_list:  # Modelo com prioridades
+        if lam_list and len(lam_list) > 1:  # Modelo com prioridades
             self.lam_list = lam_list
-            self.lam = sum(lam_list)  # λ total é a soma das taxas
+            self.lam = sum(lam_list)      # λ total é a soma das taxas
             # ρ para cada prioridade, assumindo μ único
             self.rho_list = [l / self.mi for l in lam_list]
-        else: # Modelo sem prioridades
+        else: # Modelo sem prioridades ou prioridade única (tratado como sem)
             self.lam_list = None
-            self.lam = lam  # usa o λ total fornecido
+            self.lam = lam                # usa o λ total fornecido
             self.rho_list = None
 
         self.rho = self.lam / self.mi # Fator de utilização global (ρ)
@@ -62,48 +65,45 @@ class Mg1:
     def mg1(self):
         """
         Calcula as métricas do modelo M/G/1 (sem prioridades).
-        Fórmulas de Pollaczek-Khintchine (Ref: Teoria... MG1... p. 5) [cite: 91, 92, 93]
+        Fórmulas de Pollaczek-Khintchine.
         
         Retorna:
-        tuple: (rho, L, Lq, W, Wq)
+        tuple: (rho, L, Lq, W, Wq, P0)
         """
         p0 = 1 - self.rho
         
-        # Lq = (λ² * σ² + ρ²) / [2 * (1 - ρ)] [cite: 91]
-        lq = (math.pow(self.lam, 2) * self.var + math.pow(self.rho, 2)) / (2 * (1 - self.rho))
+        # Lq = (λ² * E[S²]) / [2 * (1 - ρ)]
+        lq = (math.pow(self.lam, 2) * self.e_s2) / (2 * (1 - self.rho))
         
-        # L = ρ + Lq [cite: 93]
+        # L = ρ + Lq 
         l = self.rho + lq
         
-        # Wq = Lq / λ [cite: 92]
+        # Wq = Lq / λ 
         wq = lq / self.lam if self.lam != 0 else 0.0
         
-        # W = Wq + (1 / μ) [cite: 93]
+        # W = Wq + E[S] = Wq + (1 / μ) 
         w = wq + (1 / self.mi)
         
-        return self.rho, l, lq, w, wq
+        return self.rho, l, lq, w, wq, p0
 
     def mg1_prioridades_nao_preemptivo(self):
         """
         Calcula as métricas do modelo M/G/1 com prioridades NÃO PREEMPTIVO.
-        (Ref: Teoria... MG1... p. 19, Ex. 2) [cite: 241, 242]
         
-        Esta implementação assume E(S) = 1/μ e Var(S) = self.var (únicos) 
-        para TODAS as classes de prioridade.
+        Assume E[S] e Var[S] são idênticos para TODAS as classes de prioridade.
         
         Retorna:
-        list: Lista de tuplas [(Lq_k, L_k, Wq_k, W_k), ...] para cada prioridade.
+        list: Lista de tuplas [(Lq_k, L_k, Wq_k, W_k, rho_k), ...] para cada prioridade.
         """
+        if self.lam_list is None:
+            raise ValueError("lam_list deve ser fornecido para calcular prioridades.")
+
         resultados = []
         
-        # E(S²) = V(S) + E(S)²
-        e_s2 = self.var + math.pow(1 / self.mi, 2)
+        # A = Σ [λ_i * E(S_i²)] -> A = E[S²] * Σ(λ_i) = E[S²] * self.lam
+        a = self.lam * self.e_s2
         
-        # A = Σ [λ_i * E(S_i²)]
-        # Como E(S_i²) é o mesmo para todos, A = E(S²) * Σ(λ_i) = E(S²) * self.lam
-        a = self.lam * e_s2
-        
-        r_sum_anterior = 0.0  # R_{k-1} = Σ_{i=1}^{k-1} ρ_i
+        r_sum_anterior = 0.0  # R_{k-1} = Σ_{i=1}^{k-1} ρ_i. R_0 = 0.
         
         for i in range(len(self.lam_list)):
             lam_k = self.lam_list[i]
@@ -112,10 +112,11 @@ class Mg1:
             # R_k = Σ_{i=1}^{k} ρ_i
             r_sum_atual = r_sum_anterior + rho_k
             
-            # Wq_k = A / [2 * (1 - R_{k-1}) * (1 - R_k)] [cite: 241, 242]
+            # Wq_k = A / [2 * (1 - R_{k-1}) * (1 - R_k)]
             denominador = 2 * (1 - r_sum_anterior) * (1 - r_sum_atual)
             
-            if denominador <= 0 or (1 - r_sum_atual) <= 0:
+            # Validação de estabilidade local
+            if (1 - r_sum_atual) < 1e-9: # Se R_k se aproxima de 1 ou o denominador é zero
                 wq_k = float('inf')
                 w_k = float('inf')
                 lq_k = float('inf')
@@ -123,10 +124,10 @@ class Mg1:
             else:
                 wq_k = a / denominador
                 w_k = wq_k + (1 / self.mi) # W = Wq + E(S)
-                lq_k = lam_k * wq_k       # Lq = λ * Wq
-                l_k = lam_k * w_k         # L = λ * W
+                lq_k = lam_k * wq_k          # Lq = λ * Wq
+                l_k = lam_k * w_k            # L = λ * W
                 
-            resultados.append((lq_k, l_k, wq_k, w_k))
+            resultados.append((lq_k, l_k, wq_k, w_k, rho_k))
             
             r_sum_anterior = r_sum_atual # Atualiza R_{k-1} para a próxima iteração
             
@@ -135,118 +136,199 @@ class Mg1:
     def mg1_print(self):
         """
         Exibe os resultados do modelo M/G/1 formatados no console.
+        
+        Nota: Esta versão redireciona a saída para o widget Text usando a classe utilitária.
         """
+        # A captura de saída é feita pela função wrapper 'capture_output' no App Tkinter.
+        
         if self.lam_list is None:  # Se não for modelo com prioridades
             try:
-                rho, l, lq, w, wq = self.mg1()
+                rho, l, lq, w, wq, p0 = self.mg1()
                 print(f"--- Modelo M/G/1 (Sem Prioridades) ---")
-                print(f"Taxa de utilização (ρ): {rho:.4f}")
+                print(f"Taxa de chegada (λ): {self.lam:.4f}")
+                print(f"Taxa de atendimento (μ): {self.mi:.4f}")
+                print(f"Variância do tempo de atendimento (σ²): {self.var:.4f}")
+                print(f"E[S²] (Momento de 2ª ordem): {self.e_s2:.4f}")
+                print(f"----------------------------------------")
+                print(f"Taxa de utilização (ρ): {rho:.4f} ({(rho*100):.2f}%)")
+                print(f"Probabilidade de sistema vazio (P0): {p0:.4f} ({(p0*100):.2f}%)")
                 print(f"Número médio de clientes na fila (Lq): {lq:.4f}")
                 print(f"Número médio de clientes no sistema (L): {l:.4f}")
                 print(f"Tempo médio de espera na fila (Wq): {wq:.4f}")
                 print(f"Tempo médio no sistema (W): {w:.4f}")
             except ValueError as e:
-                print(e)
+                # O wrapper capture_output já lida com o erro, mas printamos para o TextRedirector
+                print(f"ERRO: {e}")
+            
         else:  # Se for modelo com prioridades
             if self.interrupt:
                 print(f"--- Modelo M/G/1 com Prioridades (COM Interrupção) ---")
                 print("AVISO: O cálculo para M/G/1 com prioridades PREEMPTIVAS (com interrupção)")
-                print("       não está implementado nesta classe, pois requer fórmulas M/M/1.")
-                return
-
+                print("       NÃO é fornecido por este método. As fórmulas M/G/1 Non-Preemptive serão usadas.")
+            
             try:
                 print(f"--- Modelo M/G/1 com Prioridades (SEM Interrupção) ---")
-                print(f"Taxa de utilização TOTAL (ρ_total): {self.rho:.4f}")
+                print(f"Taxa de utilização TOTAL (ρ_total): {self.rho:.4f} ({(self.rho*100):.2f}%)")
+                print(f"E[S²] (Momento de 2ª ordem): {self.e_s2:.4f}")
                 
                 resultados = self.mg1_prioridades_nao_preemptivo()
                 
                 if resultados:
-                    for i, (lq_k, l, wq, w) in enumerate(resultados):
-                        print(f"\nPrioridade {i+1} (λ_{i+1} = {self.lam_list[i]}, ρ_{i+1} = {self.rho_list[i]:.4f}):")
+                    for i, (lq_k, l, wq, w, rho_k) in enumerate(resultados):
+                        print(f"\nPrioridade {i+1} (λ_{i+1} = {self.lam_list[i]}, ρ_{i+1} = {rho_k:.4f}):")
                         print(f"  Número médio na fila (Lq_{i+1}): {lq_k:.4f}")
                         print(f"  Número médio no sistema (L_{i+1}): {l:.4f}")
                         print(f"  Tempo médio na fila (Wq_{i+1}): {wq:.4f}")
                         print(f"  Tempo médio no sistema (W_{i+1}): {w:.4f}")
             except ValueError as e:
-                print(e)
-
+                print(f"ERRO: {e}")
 
 # Classe M/M/1 e M/M/s
 class Mm:
-    """
-    Modelo de Fila M/M/1 e M/M/s (infinitos)
-    (Ref: Teoria... Modelo MMs... p. 38-39, 46, 48) [cite: 793, 795, 800, 802, 873, 891, 892, 893, 894]
-    """
-    def __init__(self, lam, mi, s=1):
+    # ... (Métodos __init__, mm1, mms permanecem como no código anterior) ...
+    # IMPORTANTE: A sua implementação de 'mms' já calcula P0 corretamente,
+    # que é essencial para o método 'prob_n_clientes'.
+
+    def __init__(self, lam: float, mi: float, s: int = 1):
         self.lam = lam
         self.mi = mi
         self.s = s
 
-        if mi == 0:
-            raise ValueError("mi (taxa de atendimento) não pode ser zero.")
+        if mi <= 0:
+            raise ValueError("A taxa de atendimento (μ) deve ser um valor positivo e não-nulo.")
         if s <= 0 or not isinstance(s, int):
-            raise ValueError("s (número de servidores) deve ser um inteiro positivo.")
+            raise ValueError("O número de servidores (s) deve ser um inteiro positivo.")
 
-        self.rho = lam / (mi * s) # Fator de utilização [cite: 868]
+        self.rho = self.lam / (self.mi * self.s)
 
         if self.rho >= 1:
-            raise ValueError(f"O sistema está instável (ρ = {self.rho:.4f} >= 1). Ajuste as taxas de chegada, atendimento ou número de servidores.")
+            raise ValueError(f"O sistema está instável (ρ = {self.rho:.4f} >= 1). Ajuste as taxas ou o número de servidores.")
 
-    def mm1(self):
-        """Métricas M/M/1 (s=1)"""
-        # (Ref: Teoria... Modelo MMs... p. 38-39) [cite: 793, 795, 800, 802]
-        l = self.lam / (self.mi - self.lam)                   # [cite: 793]
-        lq = (math.pow(self.lam, 2) / (self.mi * (self.mi - self.lam))) # [cite: 795]
-        w = 1 / (self.mi - self.lam)                          # [cite: 800]
-        wq = self.lam / (self.mi * (self.mi - self.lam))      # [cite: 802]
-        return 1 - self.rho, l, lq, w, wq                     # P0 = 1 - rho [cite: 771]
-
-    def mms(self):
-        """Métricas M/M/s (s>1)"""
-        # (Ref: Teoria... Modelo MMs... p. 46, 48) [cite: 873, 891, 892, 893, 894]
+    def mm1(self) -> tuple[float, float, float, float, float]:
+        """Calcula as métricas de desempenho para o Modelo M/M/1 (s=1)."""
+        rho1 = self.lam / self.mi
         
-        r = self.lam / self.mi  # (λ/μ)
-        
-        # --- Cálculo de P0 --- [cite: 873]
-        soma_p0 = 0.0
-        for n in range(self.s):
-            soma_p0 += (math.pow(r, n) / factorial(n))
-        termo_s = (math.pow(r, self.s) / factorial(self.s)) * (1 / (1 - self.rho))
-        p0 = 1 / (soma_p0 + termo_s)
-        
-        # --- Cálculo de Lq --- [cite: 891]
-        numerador_lq = p0 * math.pow(r, self.s) * self.rho
-        denominador_lq = factorial(self.s) * math.pow(1 - self.rho, 2)
-        lq = numerador_lq / denominador_lq
-        
-        # --- Outras métricas --- [cite: 892, 893, 894]
-        wq = lq / self.lam        # [cite: 892]
-        w = wq + (1 / self.mi)    # [cite: 894]
-        l = lq + r                # [cite: 893]
+        p0 = 1 - rho1
+        l = self.lam / (self.mi - self.lam)
+        lq = math.pow(self.lam, 2) / (self.mi * (self.mi - self.lam))
+        w = 1 / (self.mi - self.lam)
+        wq = self.lam / (self.mi * (self.mi - self.lam))
         
         return p0, l, lq, w, wq
+
+    def mms(self) -> tuple[float, float, float, float, float]:
+        """Calcula as métricas de desempenho para o Modelo M/M/s (s > 1)."""
+        r = self.lam / self.mi  # Razão r = (λ/μ)
+        
+        # --- Cálculo de P0 ---
+        soma_p0 = 0.0
+        for n in range(self.s):
+            soma_p0 += (math.pow(r, n) / math.factorial(n))
+            
+        termo_s = (math.pow(r, self.s) / math.factorial(self.s)) * (1 / (1 - self.rho))
+        p0 = 1 / (soma_p0 + termo_s)
+        
+        # --- Cálculo de Lq ---
+        numerador_lq = p0 * math.pow(r, self.s) * self.rho
+        denominador_lq = math.factorial(self.s) * math.pow(1 - self.rho, 2)
+        lq = numerador_lq / denominador_lq
+        
+        # --- Outras métricas ---
+        wq = lq / self.lam
+        w = wq + (1 / self.mi)
+        l = lq + r
+        
+        return p0, l, lq, w, wq
+
+    def prob_n_clientes(self, n: int) -> float:
+        """
+        Calcula a probabilidade de haver exatamente 'n' clientes no sistema (Pn).
+        Válido para M/M/1 (n >= 0) e M/M/s (n >= 0).
+        """
+        if n < 0:
+            return 0.0
+
+        # Obter P0. Se s=1, usa mm1; se s>1, usa mms.
+        if self.s == 1:
+            p0, _, _, _, _ = self.mm1()
+            # Fórmula M/M/1: Pn = ρ^n * P0
+            if n == 0:
+                return p0
+            return math.pow(self.rho, n) * p0
+        else: # M/M/s
+            p0, _, _, _, _ = self.mms()
+            r = self.lam / self.mi # r = λ/μ
+            
+            if n < self.s:
+                # Se n < s: Pn = (r^n / n!) * P0
+                return (math.pow(r, n) / math.factorial(n)) * p0
+            else:
+                # Se n >= s: Pn = (r^s / s! * ρ^(n-s)) * P0
+                # Onde ρ = λ/(sμ)
+                
+                # Termo de Pn = (r^s / s!)
+                termo_s = math.pow(r, self.s) / math.factorial(self.s)
+                
+                # Termo de ρ^(n-s)
+                fator_rho = math.pow(self.rho, n - self.s)
+                
+                return termo_s * fator_rho * p0
+
+    def prob_wq_maior_que_t(self, t: float) -> float:
+        """
+        Calcula a probabilidade de o tempo de espera na fila ser maior que t: P(Wq > t).
+        """
+        if self.rho >= 1:
+            return 1.0
+            
+        if self.s == 1: 
+            # Fórmula M/M/1: P(Wq > t) = ρ * e^-(μ - λ)t
+            rho1 = self.lam / self.mi
+            return rho1 * math.exp(-(self.mi - self.lam) * t)
+        else:
+            # Fórmula M/M/s: P(Wq > t) = P(Wq > 0) * e^-(sμ(1-ρ)t)
+            p0, _, lq, _, _ = self.mms()
+            r = self.lam / self.mi
+            pwq0 = lq / r
+            
+            return pwq0 * math.exp(-(self.mi * self.s * (1 - self.rho)) * t)
+
+    def prob_w_maior_que_t(self, t: float) -> float:
+        """
+        Calcula a probabilidade de o tempo total no sistema ser maior que t: P(W > t).
+        Esta fórmula é específica para o modelo M/M/1.
+        """
+        if self.s != 1:
+            raise ValueError("O cálculo P(W > t) = e^-(μ - λ)t é aplicável somente ao modelo M/M/1.")
+
+        if self.mi <= self.lam:
+            return 1.0
+            
+        return math.exp(-(self.mi - self.lam) * t)
 
     def resultado(self):
         """Exibe os resultados formatados no console."""
         try:
             if self.s == 1:
                 p0, l, lq, w, wq = self.mm1()
-                print(f"--- Modelo M/M/1 ---")
-                print(f"Taxa de utilização (ρ): {self.rho:.4f}")
-                print(f"Probabilidade do sistema estar vazio (P0): {p0:.4f}")
+                modelo = "M/M/1"
             else:
                 p0, l, lq, w, wq = self.mms()
-                print(f"--- Modelo M/M/{self.s} ---")
-                print(f"Taxa de utilização (ρ): {self.rho:.4f}")
-                print(f"Probabilidade do sistema estar vazio (P0): {p0:.4f}")
+                modelo = f"M/M/{self.s}"
             
+            print(f"--- Modelo {modelo} ---")
+            print(f"Taxa de chegada (λ): {self.lam:.4f}")
+            print(f"Taxa de atendimento por servidor (μ): {self.mi:.4f}")
+            print(f"Número de servidores (s): {self.s}")
+            print(f"Taxa de utilização do sistema (ρ): {self.rho:.4f}")
+            print(f"Probabilidade do sistema estar vazio (P0): {p0:.4f}")
             print(f"Número médio de clientes no sistema (L): {l:.4f}")
             print(f"Número médio de clientes na fila (Lq): {lq:.4f}")
-            print(f"Tempo médio no sistema (W): {w:.4f}")
-            print(f"Tempo médio na fila (Wq): {wq:.4f}")
+            print(f"Tempo médio no sistema (W): {w:.4f} horas ({w*60:.2f} minutos)")
+            print(f"Tempo médio na fila (Wq): {wq:.4f} horas ({wq*60:.2f} minutos)")
+            
         except ValueError as e:
-            print(e)
-
+            raise e
 
 # Classe M/M/1/K
 class Mm1k:
