@@ -49,12 +49,11 @@ class FilaApp:
         # Criar as abas
         self.create_tab_mms()
         self.create_tab_mg1()
+        self.create_tab_mms_priority_nonpreemptive() # M/M/s Prioridade Sem Interrupção
+        self.create_tab_mms_priority_preemptive()    # M/M/s Prioridade Com Interrupção
         self.create_tab_finite_k() # M/M/1/K e M/M/s/K
         self.create_tab_finite_n() # M/M/1/N e M/M/s/N
         self.create_tab_lista_exercicios()
-        self.criar_aba_prioridade_interrupcao()
-        self.criar_aba_prioridade_sem_interrupcao()
-
 
     def create_output_area(self, parent):
         """Cria uma área de texto scrollável para mostrar os resultados."""
@@ -183,230 +182,157 @@ class FilaApp:
     # --- ABA 2: M/G/1 e Prioridades ---
     def create_tab_mg1(self):
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="M/G/1 e Prioridades")
+        # Título alterado para foco apenas no M/G/1
+        self.notebook.add(tab, text="M/G/1 Simples")
         
         input_frame = ttk.Frame(tab, padding=10)
         input_frame.pack(fill='x')
         
-        # Variaveis de controle
-        mode_var = tk.StringVar(value="simple") # simple, priority_nopreempt, priority_preempt
+        ttk.Label(input_frame, text="Modelo M/G/1 (Fórmula de Pollaczek-Khinchine)").grid(row=0, column=0, columnspan=2, sticky='w', pady=5)
         
-        # Radio buttons para modo
-        ttk.Label(input_frame, text="Modo:").grid(row=0, column=0, sticky='w')
-        rb_simple = ttk.Radiobutton(input_frame, text="M/G/1 Simples", variable=mode_var, value="simple")
-        rb_simple.grid(row=0, column=1, sticky='w')
-        rb_prio_np = ttk.Radiobutton(input_frame, text="Prioridade (Sem Interrupção)", variable=mode_var, value="priority_nopreempt")
-        rb_prio_np.grid(row=1, column=1, sticky='w')
-        rb_prio_p = ttk.Radiobutton(input_frame, text="Prioridade (Com Interrupção - M/M/1)", variable=mode_var, value="priority_preempt")
-        rb_prio_p.grid(row=2, column=1, sticky='w')
+        ttk.Separator(input_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky='ew', pady=5)
 
-        ttk.Separator(input_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=5)
-
-        # Campos
-        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=4, column=0, sticky='w')
+        # Campos de Entrada
+        # λ
+        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=2, column=0, sticky='w')
         ent_lam = ttk.Entry(input_frame)
-        ent_lam.grid(row=4, column=1, padx=5, pady=2)
-        ttk.Label(input_frame, text="* Para prioridades, use lista ex: 2, 4, 2", font=("Arial", 8)).grid(row=5, column=1, sticky='w')
+        ent_lam.insert(0, "8")
+        ent_lam.grid(row=2, column=1, padx=5, pady=2)
 
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=6, column=0, sticky='w')
+        # μ
+        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=3, column=0, sticky='w')
         ent_mi = ttk.Entry(input_frame)
-        ent_mi.grid(row=6, column=1, padx=5, pady=2)
+        ent_mi.insert(0, "10")
+        ent_mi.grid(row=3, column=1, padx=5, pady=2)
 
-        ttk.Label(input_frame, text="Variância (σ²) [Só M/G/1]:").grid(row=7, column=0, sticky='w')
+        # Variância (σ²)
+        ttk.Label(input_frame, text="Variância (σ²):").grid(row=4, column=0, sticky='w')
         ent_var = ttk.Entry(input_frame)
-        ent_var.insert(0, "0")
-        ent_var.grid(row=7, column=1, padx=5, pady=2)
+        ent_var.insert(0, "0.005")
+        ent_var.grid(row=4, column=1, padx=5, pady=2)
 
         out_text = self.create_output_area(tab)
 
         def run():
+            # Captura os três parâmetros necessários para M/G/1 Simples
+            lam = float(ent_lam.get())
             mi = float(ent_mi.get())
-            mode = mode_var.get()
+            var = float(ent_var.get())
             
-            if mode == "simple":
-                lam = float(ent_lam.get())
-                var = float(ent_var.get())
-                # Chama a classe Mg1 para M/G/1 simples (sem lista de lambda)
-                modelo = Mg1(lam=lam, mi=mi, var=var)
-                modelo.mg1_print()
+            # Chama a classe Mg1 para M/G/1 simples (lam_list=None é o default)
+            modelo = Mg1(lam=lam, mi=mi, var=var)
+            modelo.mg1_print()
             
-            elif mode == "priority_nopreempt":
-                # Parse list
-                lam_str = ent_lam.get()
-                lam_list = [float(x.strip()) for x in lam_str.split(',') if x.strip()]
-                var = float(ent_var.get())
-                # Chama a classe Mg1 para prioridade não preemptiva (com lista de lambda)
-                modelo = Mg1(lam=0, mi=mi, var=var, lam_list=lam_list, interrupt=False)
-                modelo.mg1_print()
-                
-            elif mode == "priority_preempt":
-                try:
-                    Mm1PrioridadePreemptiva
-                except NameError:
-                    raise ValueError("A classe Mm1PrioridadePreemptiva não foi importada corretamente.")
-                
-                lam_str = ent_lam.get()
-                lam_list = [float(x.strip()) for x in lam_str.split(',') if x.strip()]
-                # Classe especifica Mm1PrioridadePreemptiva
-                modelo = Mm1PrioridadePreemptiva(lam_list=lam_list, mi=mi)
-                modelo.resultado()
-
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=8, column=0, columnspan=2, pady=10)
+        # O botão de cálculo agora está na linha 5
+        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=5, column=0, columnspan=2, pady=10)
     
-    def criar_aba_prioridade_interrupcao(notebook):
-        aba = ttk.Frame(notebook)
-        notebook.add(aba, text="Prioridade c/ Interrupção")
-
-        # ---------- Layout ----------
-        frm = ttk.Frame(aba, padding=10)
-        frm.pack(fill="both", expand=True)
-
-        # λ_i
-        ttk.Label(frm, text="λᵢ (separados por vírgula):").grid(row=0, column=0, sticky="w")
-        entrada_lambda = ttk.Entry(frm, width=40)
-        entrada_lambda.grid(row=0, column=1, padx=5, pady=5)
-
-        # μ
-        ttk.Label(frm, text="μ (taxa de atendimento):").grid(row=1, column=0, sticky="w")
-        entrada_mi = ttk.Entry(frm, width=20)
-        entrada_mi.grid(row=1, column=1, padx=5, pady=5, sticky="w")
-
-        # servidores
-        ttk.Label(frm, text="Número de servidores (s):").grid(row=2, column=0, sticky="w")
-        entrada_servidores = ttk.Entry(frm, width=20)
-        entrada_servidores.grid(row=2, column=1, padx=5, pady=5, sticky="w")
-
-        # ---------- Caixa de Resultado ----------
-        caixa_frame = ttk.Frame(frm)
-        caixa_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew")
-
-        frm.rowconfigure(4, weight=1)
-        frm.columnconfigure(1, weight=1)
-
-        texto_resultado = tk.Text(caixa_frame, height=20, wrap="word")
-        texto_resultado.pack(side="left", fill="both", expand=True)
-
-        scroll = ttk.Scrollbar(caixa_frame, orient="vertical", command=texto_resultado.yview)
-        scroll.pack(side="right", fill="y")
-        texto_resultado.configure(yscrollcommand=scroll.set)
-
-        # ---------- Função de Cálculo ----------
-        def calcular():
-            lambdas = entrada_lambda.get()
-            mi = entrada_mi.get()
-            servidores = entrada_servidores.get()
-
-            if not lambdas or not mi or not servidores:
-                messagebox.showerror("Erro", "Preencha todos os campos!")
-                return
-
-            try:
-                modelo = MMSPrioridadeComInterrupcaoModelo()
-                res = modelo.calcular(
-                    lambdas_=lambdas,
-                    mi=mi,
-                    servidores=servidores,
-                )
-            except Exception as e:
-                messagebox.showerror("Erro ao calcular", str(e))
-                return
-
-            texto_resultado.delete("1.0", tk.END)
-
-            if isinstance(res, dict) and "Erro" in res:
-                texto_resultado.insert(tk.END, f"Erro: {res['Erro']}")
-                return
-
-            for classe, valores in res.items():
-                texto_resultado.insert(tk.END, f"{classe}\n")
-                for key, val in valores.items():
-                    texto_resultado.insert(tk.END, f"  {key}: {val}\n")
-                texto_resultado.insert(tk.END, "\n-------------------------\n")
-
-        # ---------- Botão Calcular ----------
-        ttk.Button(frm, text="Calcular", command=calcular).grid(
-            row=3, column=0, columnspan=2, pady=10
-        )
-        return aba
-    
-    def criar_aba_prioridade_sem_interrupcao(notebook):
-        aba = ttk.Frame(notebook)
-        notebook.add(aba, text="Prioridade s/ Interrupção")
-
-        # ---------- Layout ----------
-        frm = ttk.Frame(aba, padding=10)
-        frm.pack(fill="both", expand=True)
-
-        # λ_i
-        ttk.Label(frm, text="λᵢ (separados por vírgula):").grid(row=0, column=0, sticky="w")
-        entrada_lambda = ttk.Entry(frm, width=40)
-        entrada_lambda.grid(row=0, column=1, padx=5, pady=5)
-
-        # μ
-        ttk.Label(frm, text="μ (taxa de atendimento):").grid(row=1, column=0, sticky="w")
-        entrada_mi = ttk.Entry(frm, width=20)
-        entrada_mi.grid(row=1, column=1, padx=5, pady=5, sticky="w")
-
-        # servidores
-        ttk.Label(frm, text="Número de servidores (s):").grid(row=2, column=0, sticky="w")
-        entrada_servidores = ttk.Entry(frm, width=20)
-        entrada_servidores.grid(row=2, column=1, padx=5, pady=5, sticky="w")
-
-        # ---------- Caixa de Resultado ----------
-        caixa_frame = ttk.Frame(frm)
-        caixa_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew")
-
-        frm.rowconfigure(4, weight=1)
-        frm.columnconfigure(1, weight=1)
-
-        texto_resultado = tk.Text(caixa_frame, height=20, wrap="word")
-        texto_resultado.pack(side="left", fill="both", expand=True)
-
-        scroll = ttk.Scrollbar(caixa_frame, orient="vertical", command=texto_resultado.yview)
-        scroll.pack(side="right", fill="y")
-        texto_resultado.configure(yscrollcommand=scroll.set)
-
-        # ---------- Função de Cálculo ----------
-        def calcular():
-            lambdas = entrada_lambda.get()
-            mi = entrada_mi.get()
-            servidores = entrada_servidores.get()
-
-            if not lambdas or not mi or not servidores:
-                messagebox.showerror("Erro", "Preencha todos os campos!")
-                return
-
-            try:
-                modelo = MMSPrioridadeSemInterrupcaoModelo()
-                res = modelo.calcular(
-                    lambdas_=lambdas,
-                    mi=mi,
-                    servidores=servidores,
-                )
-            except Exception as e:
-                messagebox.showerror("Erro ao calcular", str(e))
-                return
-
-            texto_resultado.delete("1.0", tk.END)
-
-            if isinstance(res, dict) and "Erro" in res:
-                texto_resultado.insert(tk.END, f"Erro: {res['Erro']}")
-                return
-
-            for classe, valores in res.items():
-                texto_resultado.insert(tk.END, f"{classe}\n")
-                for key, val in valores.items():
-                    texto_resultado.insert(tk.END, f"  {key}: {val}\n")
-                texto_resultado.insert(tk.END, "\n-------------------------\n")
-
-        # ---------- Botão Calcular ----------
-        ttk.Button(frm, text="Calcular", command=calcular).grid(
-            row=3, column=0, columnspan=2, pady=10
-        )
-
-        return aba
-
+    def create_tab_mms_priority_preemptive(self):
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="MMS Prioridade (Interrupção)")
         
+        input_frame = ttk.Frame(tab, padding=10)
+        input_frame.pack(fill='x')
+        
+        # 1. Input λi (Lista)
+        ttk.Label(input_frame, text="Taxas de Chegada (λi, separadas por vírgula):").grid(row=0, column=0, sticky='w')
+        ent_lambdas = ttk.Entry(input_frame, width=50)
+        ent_lambdas.insert(0, "1.5, 2.0, 0.5")
+        ent_lambdas.grid(row=0, column=1, padx=5, pady=5)
+        
+        # 2. Input μ
+        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w')
+        ent_mi = ttk.Entry(input_frame)
+        ent_mi.insert(0, "4.0")
+        ent_mi.grid(row=1, column=1, padx=5, pady=5)
+        
+        # 3. Input s
+        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w')
+        ent_s = ttk.Entry(input_frame)
+        ent_s.insert(0, "1")
+        ent_s.grid(row=2, column=1, padx=5, pady=5)
+        
+        out_text = self.create_output_area(tab)
+        
+        def run():
+            # A função de cálculo que você forneceu
+            resultados = mms_prioridade_com_interrupcao(
+                lambdas_=[
+                    float(x.strip())
+                    for x in ent_lambdas.get().split(',')
+                    if x.strip()
+                ],
+                mi=float(ent_mi.get()),
+                servidores=int(ent_s.get())
+            )
+            
+            # Formata e printa os resultados no console/widget
+            print("\n--- Resultados MMS Prioridade com Interrupção ---\n")
+            for classe, vals in resultados.items():
+                if classe == "Erro":
+                    print(f"ERRO: {vals}")
+                    return
+                print(f"Classe: {classe.replace('Classe ', '')}")
+                for key, value in vals.items():
+                    print(f"    {key.strip()} = {value}")
+                print("-" * 30)
+
+
+        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=3, column=0, columnspan=2, pady=10)
+    
+    def create_tab_mms_priority_nonpreemptive(self):
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="MMS Prioridade (Sem Interrupção)")
+        
+        input_frame = ttk.Frame(tab, padding=10)
+        input_frame.pack(fill='x')
+        
+        # 1. Input λi (Lista)
+        ttk.Label(input_frame, text="Taxas de Chegada (λi, separadas por vírgula):").grid(row=0, column=0, sticky='w')
+        ent_lambdas = ttk.Entry(input_frame, width=50)
+        ent_lambdas.insert(0, "1.5, 2.0, 0.5")
+        ent_lambdas.grid(row=0, column=1, padx=5, pady=5)
+        
+        # 2. Input μ
+        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w')
+        ent_mi = ttk.Entry(input_frame)
+        ent_mi.insert(0, "4.0")
+        ent_mi.grid(row=1, column=1, padx=5, pady=5)
+        
+        # 3. Input s
+        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w')
+        ent_s = ttk.Entry(input_frame)
+        ent_s.insert(0, "2")
+        ent_s.grid(row=2, column=1, padx=5, pady=5)
+        
+        out_text = self.create_output_area(tab)
+        
+        def run():
+            # A função de cálculo que você forneceu
+            lambdas_input = [
+                float(x.strip())
+                for x in ent_lambdas.get().split(',')
+                if x.strip()
+            ]
+            
+            resultados = mms_prioridade_sem_interrupcao(
+                lambdas_=lambdas_input,
+                mi=float(ent_mi.get()),
+                servidores=int(ent_s.get())
+            )
+            
+            # Formata e printa os resultados no console/widget
+            print("\n--- Resultados MMS Prioridade Sem Interrupção ---\n")
+            for classe, vals in resultados.items():
+                if classe == "Erro":
+                    print(f"ERRO: {vals}")
+                    return
+                print(f"Classe: {classe.replace('Classe ', '')}")
+                for key, value in vals.items():
+                    print(f"    {key.strip()} = {value}")
+                print("-" * 30)
+
+
+        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=3, column=0, columnspan=2, pady=10)
 
     # --- ABA 3: Fila Finita (K) ---
     def create_tab_finite_k(self):
