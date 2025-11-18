@@ -1,6 +1,11 @@
 import math
 # Importa todas as classes do seu script principal
-from formulas import Mg1, Mm, Mm1k, Mmsk, Mm1n, Mmsn, Mm1PrioridadePreemptiva
+from forms.mg1 import Mg1
+from forms.mm import Mm
+from forms.mm1k import Mm1k
+from forms.mmsk import Mmsk
+from forms.mm1n import Mm1n
+from forms.mmsn import Mmsn
 
 def imprimir_titulo(titulo):
     """Auxiliar para formatar a saída"""

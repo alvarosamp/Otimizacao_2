@@ -46,7 +46,34 @@ python interface.py
 
 # Para executar os exercícios propostos em sala de aula
 python ListaExercicios.py
+
+# Para abrir a interface gráfica (Tkinter)
+python app.py
 ```
+
+## Interface gráfica (Tkinter)
+
+A aplicação gráfica em `app.py` fornece abas para calcular rapidamente as métricas:
+
+- M/M/1 e M/M/s (capacidade infinita)
+- M/G/1 simples e com prioridades não preemptivas; e M/M/1 com prioridades preemptivas
+- Filas com capacidade finita: M/M/1/K e M/M/s/K
+- População finita: M/M/1/N e M/M/s/N
+- Aba “Resolver Lista Exercícios” que roda `ListaExercicios.py` e mostra os resultados
+
+Como executar:
+
+```powershell
+python app.py
+```
+
+Se aparecer erro de import, garanta que `formulas.py` e `ListaExercicios.py` estão na mesma pasta do `app.py`.
+O Tkinter já vem com o Python padrão para Windows/macOS; se estiver usando uma distribuição mínima, instale o suporte ao Tk.
+
+## Requisitos
+
+- Python 3.8 ou superior
+- Sem dependências externas (usa apenas a biblioteca padrão)
 
 ## Visão geral (principais classes em `formulas.py`)
 
@@ -77,6 +104,7 @@ O arquivo `ListaExercicios.py` contém implementações dos exercícios proposto
 - **Lista M/M/1/N e M/M/s/N** — exercícios 3, 4d, 6
 
 Para executar todos os testes:
+ 
 ```powershell
 python ListaExercicios.py
 ```
@@ -84,6 +112,7 @@ python ListaExercicios.py
 ## Exemplos de uso rápido
 
 **M/G/1 sem prioridades:**
+ 
 ```python
 from formulas import Mg1
 modelo = Mg1(lam=2, mi=5, var=0.04)
@@ -91,12 +120,14 @@ modelo.mg1_print()
 ```
 
 **M/G/1 com prioridades (não preemptivo):**
+ 
 ```python
 modelo = Mg1(lam=3, mi=6, var=0.05, lam_list=[1,1,1], interrupt=False)
 modelo.mg1_print()
 ```
 
 **M/M/1 com prioridades (preemptivo):**
+ 
 ```python
 from formulas import Mm1PrioridadePreemptiva
 modelo = Mm1PrioridadePreemptiva(lam_list=[2, 4, 2], mi=10)
