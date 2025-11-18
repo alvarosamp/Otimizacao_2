@@ -10,8 +10,8 @@ try:
     from forms.mmsk import Mmsk
     from forms.mm1n import Mm1n
     from forms.mmsn import Mmsn
-    from forms.prioridadesInterrupcao import MMSPrioridadeComInterrupcaoModelo
-    from forms.prioridadesSemInterrup import MMSPrioridadeSemInterrupcaoModelo
+    from forms.prioridadesInterrupcao import MMSPrioridadeComInterrupcaoModelo, mms_prioridade_com_interrupcao
+    from forms.prioridadesSemInterrup import MMSPrioridadeSemInterrupcaoModelo, mms_prioridade_sem_interrupcao
     from ListaExercicios import rodar_testes
 except ImportError as e:
     print("Erro crítico: Certifique-se de que 'formulas.py' e 'ListaExercicios.py' estão na mesma pasta.")
