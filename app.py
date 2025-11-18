@@ -10,6 +10,8 @@ try:
     from forms.mmsk import Mmsk
     from forms.mm1n import Mm1n
     from forms.mmsn import Mmsn
+    from forms.prioridadesInterrupcao import MMSPrioridadeComInterrupcaoModelo
+    from forms.prioridadesSemInterrup import MMSPrioridadeSemInterrupcaoModelo
     from ListaExercicios import rodar_testes
 except ImportError as e:
     print("Erro crítico: Certifique-se de que 'formulas.py' e 'ListaExercicios.py' estão na mesma pasta.")
@@ -50,6 +52,9 @@ class FilaApp:
         self.create_tab_finite_k() # M/M/1/K e M/M/s/K
         self.create_tab_finite_n() # M/M/1/N e M/M/s/N
         self.create_tab_lista_exercicios()
+        self.criar_aba_prioridade_interrupcao()
+        self.criar_aba_prioridade_sem_interrupcao()
+
 
     def create_output_area(self, parent):
         """Cria uma área de texto scrollável para mostrar os resultados."""
@@ -247,6 +252,161 @@ class FilaApp:
                 modelo.resultado()
 
         ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=8, column=0, columnspan=2, pady=10)
+    
+    def criar_aba_prioridade_interrupcao(notebook):
+        aba = ttk.Frame(notebook)
+        notebook.add(aba, text="Prioridade c/ Interrupção")
+
+        # ---------- Layout ----------
+        frm = ttk.Frame(aba, padding=10)
+        frm.pack(fill="both", expand=True)
+
+        # λ_i
+        ttk.Label(frm, text="λᵢ (separados por vírgula):").grid(row=0, column=0, sticky="w")
+        entrada_lambda = ttk.Entry(frm, width=40)
+        entrada_lambda.grid(row=0, column=1, padx=5, pady=5)
+
+        # μ
+        ttk.Label(frm, text="μ (taxa de atendimento):").grid(row=1, column=0, sticky="w")
+        entrada_mi = ttk.Entry(frm, width=20)
+        entrada_mi.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        # servidores
+        ttk.Label(frm, text="Número de servidores (s):").grid(row=2, column=0, sticky="w")
+        entrada_servidores = ttk.Entry(frm, width=20)
+        entrada_servidores.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+
+        # ---------- Caixa de Resultado ----------
+        caixa_frame = ttk.Frame(frm)
+        caixa_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew")
+
+        frm.rowconfigure(4, weight=1)
+        frm.columnconfigure(1, weight=1)
+
+        texto_resultado = tk.Text(caixa_frame, height=20, wrap="word")
+        texto_resultado.pack(side="left", fill="both", expand=True)
+
+        scroll = ttk.Scrollbar(caixa_frame, orient="vertical", command=texto_resultado.yview)
+        scroll.pack(side="right", fill="y")
+        texto_resultado.configure(yscrollcommand=scroll.set)
+
+        # ---------- Função de Cálculo ----------
+        def calcular():
+            lambdas = entrada_lambda.get()
+            mi = entrada_mi.get()
+            servidores = entrada_servidores.get()
+
+            if not lambdas or not mi or not servidores:
+                messagebox.showerror("Erro", "Preencha todos os campos!")
+                return
+
+            try:
+                modelo = MMSPrioridadeComInterrupcaoModelo()
+                res = modelo.calcular(
+                    lambdas_=lambdas,
+                    mi=mi,
+                    servidores=servidores,
+                )
+            except Exception as e:
+                messagebox.showerror("Erro ao calcular", str(e))
+                return
+
+            texto_resultado.delete("1.0", tk.END)
+
+            if isinstance(res, dict) and "Erro" in res:
+                texto_resultado.insert(tk.END, f"Erro: {res['Erro']}")
+                return
+
+            for classe, valores in res.items():
+                texto_resultado.insert(tk.END, f"{classe}\n")
+                for key, val in valores.items():
+                    texto_resultado.insert(tk.END, f"  {key}: {val}\n")
+                texto_resultado.insert(tk.END, "\n-------------------------\n")
+
+        # ---------- Botão Calcular ----------
+        ttk.Button(frm, text="Calcular", command=calcular).grid(
+            row=3, column=0, columnspan=2, pady=10
+        )
+        return aba
+    
+    def criar_aba_prioridade_sem_interrupcao(notebook):
+        aba = ttk.Frame(notebook)
+        notebook.add(aba, text="Prioridade s/ Interrupção")
+
+        # ---------- Layout ----------
+        frm = ttk.Frame(aba, padding=10)
+        frm.pack(fill="both", expand=True)
+
+        # λ_i
+        ttk.Label(frm, text="λᵢ (separados por vírgula):").grid(row=0, column=0, sticky="w")
+        entrada_lambda = ttk.Entry(frm, width=40)
+        entrada_lambda.grid(row=0, column=1, padx=5, pady=5)
+
+        # μ
+        ttk.Label(frm, text="μ (taxa de atendimento):").grid(row=1, column=0, sticky="w")
+        entrada_mi = ttk.Entry(frm, width=20)
+        entrada_mi.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        # servidores
+        ttk.Label(frm, text="Número de servidores (s):").grid(row=2, column=0, sticky="w")
+        entrada_servidores = ttk.Entry(frm, width=20)
+        entrada_servidores.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+
+        # ---------- Caixa de Resultado ----------
+        caixa_frame = ttk.Frame(frm)
+        caixa_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew")
+
+        frm.rowconfigure(4, weight=1)
+        frm.columnconfigure(1, weight=1)
+
+        texto_resultado = tk.Text(caixa_frame, height=20, wrap="word")
+        texto_resultado.pack(side="left", fill="both", expand=True)
+
+        scroll = ttk.Scrollbar(caixa_frame, orient="vertical", command=texto_resultado.yview)
+        scroll.pack(side="right", fill="y")
+        texto_resultado.configure(yscrollcommand=scroll.set)
+
+        # ---------- Função de Cálculo ----------
+        def calcular():
+            lambdas = entrada_lambda.get()
+            mi = entrada_mi.get()
+            servidores = entrada_servidores.get()
+
+            if not lambdas or not mi or not servidores:
+                messagebox.showerror("Erro", "Preencha todos os campos!")
+                return
+
+            try:
+                modelo = MMSPrioridadeSemInterrupcaoModelo()
+                res = modelo.calcular(
+                    lambdas_=lambdas,
+                    mi=mi,
+                    servidores=servidores,
+                )
+            except Exception as e:
+                messagebox.showerror("Erro ao calcular", str(e))
+                return
+
+            texto_resultado.delete("1.0", tk.END)
+
+            if isinstance(res, dict) and "Erro" in res:
+                texto_resultado.insert(tk.END, f"Erro: {res['Erro']}")
+                return
+
+            for classe, valores in res.items():
+                texto_resultado.insert(tk.END, f"{classe}\n")
+                for key, val in valores.items():
+                    texto_resultado.insert(tk.END, f"  {key}: {val}\n")
+                texto_resultado.insert(tk.END, "\n-------------------------\n")
+
+        # ---------- Botão Calcular ----------
+        ttk.Button(frm, text="Calcular", command=calcular).grid(
+            row=3, column=0, columnspan=2, pady=10
+        )
+
+        return aba
+
+        
 
     # --- ABA 3: Fila Finita (K) ---
     def create_tab_finite_k(self):
