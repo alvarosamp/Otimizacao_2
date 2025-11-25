@@ -14,7 +14,6 @@ try:
     from forms.prioridadesSemInterrup import calcular_mms_prioridade_sem_interrupcao
     from ListaExercicios import rodar_testes
 except ImportError as e:
-    print("Erro crítico: Certifique-se de que 'formulas.py' e 'ListaExercicios.py' estão na mesma pasta.")
     print(f"Detalhe: {e}")
     sys.exit(1)
 
@@ -519,35 +518,57 @@ class FilaApp:
         
         ttk.Label(input_frame, text="λ por cliente:").grid(row=0, column=0, sticky='w')
         ent_lam = ttk.Entry(input_frame)
+        ent_lam.insert(0, "0.1")
         ent_lam.grid(row=0, column=1, padx=5, pady=5)
         
         ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w')
         ent_mi = ttk.Entry(input_frame)
+        ent_mi.insert(0, "0.5")
         ent_mi.grid(row=1, column=1, padx=5, pady=5)
         
         ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w')
         ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "1")
+        ent_s.insert(0, "2")
         ent_s.grid(row=2, column=1, padx=5, pady=5)
 
         ttk.Label(input_frame, text="Tamanho da População (N):").grid(row=3, column=0, sticky='w')
         ent_n = ttk.Entry(input_frame)
+        ent_n.insert(0, "5")
         ent_n.grid(row=3, column=1, padx=5, pady=5)
         
         out_text = self.create_output_area(tab)
         
         def run():
-            l = float(ent_lam.get())
-            m = float(ent_mi.get())
-            s = int(ent_s.get())
-            n_pop = int(ent_n.get())
+            # Limpa o output antes de cada cálculo
+            print("\n"*100)
             
-            if s == 1:
-                modelo = Mm1n(lam_por_cliente=l, mi=m, n_pop=n_pop)
-                modelo.resultado()
-            else:
-                modelo = Mmsn(lam_por_cliente=l, mi=m, s=s, n_pop=n_pop)
-                modelo.resultado()
+            try:
+                l = float(ent_lam.get())
+                m = float(ent_mi.get())
+                s = int(ent_s.get())
+                n_pop = int(ent_n.get())
+                
+                # --- LÓGICA DE INSTANCIAÇÃO DE CLASSE RESTAURADA ---
+                
+                if s == 1:
+                    # Tenta usar a classe específica M/M/1/N se ela existir
+                    try:
+                        modelo = Mm1n(lam_por_cliente=l, mi=m, n_pop=n_pop)
+                        modelo.resultado() # Assume que Mm1n tem o método resultado()
+                    except NameError:
+                        # Caso Mm1n não esteja definido, usa a Mmsn generalista (s=1)
+                        modelo = Mmsn(lam_por_cliente=l, mi=m, s=s, n_pop=n_pop)
+                        modelo.resultado()
+                else:
+                    # Usa M/M/s/N para s > 1
+                    modelo = Mmsn(lam_por_cliente=l, mi=m, s=s, n_pop=n_pop)
+                    modelo.resultado() # Chama o método que imprime o resultado (definido acima)
+
+            except ValueError:
+                print(f"\nERRO DE ENTRADA: Certifique-se de que todos os campos de entrada contêm números válidos.")
+            except Exception as e:
+                # Captura erros de cálculo ou instanciação
+                print(f"\nOcorreu um erro durante o processamento: {e}")
 
         ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=4, column=0, columnspan=2, pady=10)
 
