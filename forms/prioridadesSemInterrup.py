@@ -1,25 +1,45 @@
 import math
+from math import factorial
 
+# --- FUNÇÕES AUXILIARES ---
 
-'''
--Script responsável pelos cálculos do modelo com prioridade sem interrupção
+def _calcular_lambda_i(lambda_total: float, proporcoes_str: str) -> list[float]:
+    """Calcula as taxas de chegada individuais (λi) a partir da λ total e proporções."""
+    proporcoes = [
+        float(x.strip())
+        for x in proporcoes_str.split(",")
+        if x.strip()
+    ]
+    if not proporcoes:
+        raise ValueError("Nenhuma proporção de chegada válida fornecida.")
 
--Parâmetros:
-λi: taxa de chegada da classe i            L: número médio de clientes no sistema
-µ: taxa de atendimento                     Lq: número médio de clientes na fila
-s: número de servidores                    W: tempo médio gasto no sistema
-Wq: tempo médio gasto na fila
+    soma_proporcoes = sum(proporcoes)
+    if soma_proporcoes <= 0:
+        raise ValueError("A soma das proporções de chegada deve ser maior que zero.")
+    
+    # λi = (Proporção_i / ΣProporções) * λ_total
+    return [(prop / soma_proporcoes) * lambda_total for prop in proporcoes]
 
--Fórmulas:
-r = λ / µ, com λ = Σ λi
-W_i = 1 / [  ( s! * (sµ - λ) / r^s * Σ_{j=0}^{s-1} r^j / j!  + sµ ) * (1 - Σ_{j=1}^{i-1} λj / (sµ)) * (1 - Σ_{j=1}^{i}   λj / (sµ)) ]
-Wq_i = W_i - 1/µ
-L_i  = λi * W_i
-Lq_i = λi * Wq_i
-'''
+def _calcular_wq_geral_inverso(lam_total: float, mi: float, s: int) -> float:
+    """
+    Calcula o inverso do tempo de espera na fila geral (1 / Wq,geral) para o modelo M/M/s.
+    
+    [ s! * (sµ - λ) / r^s * Σ_{j=0}^{s-1} r^j / j!  + sµ ]
+    """
+    r = lam_total / mi # r = λ/µ
+    
+    soma_erlang = sum(math.pow(r, j) / factorial(j) for j in range(s))
+    
+    r_pow_s = r ** s
+    
+    # O termo A é o fator de probabilidade de espera (Pq)
+    termo_a = (factorial(s) * (s * mi - lam_total) / r_pow_s) * soma_erlang
+    
+    # Retorna: 1 / Wq_geral
+    return termo_a + s * mi
 
-# Função para arredondar valores
 def arredondar(valor, casas=6):
+    """Função auxiliar para arredondar valores."""
     if isinstance(valor, float):
         return round(valor, casas)
     if isinstance(valor, dict):
@@ -28,80 +48,73 @@ def arredondar(valor, casas=6):
         return [arredondar(v, casas) for v in valor]
     return valor
 
-# Função principal do modelo com prioridade sem interrupção
-def mms_prioridade_sem_interrupcao(lambdas_, mi, servidores):
-    # Validações básicas
-    if mi <= 0:
-        return {"Erro": "Taxa de serviço (µ) deve ser maior que zero"}
-    if servidores <= 0:
-        return {"Erro": "Número de servidores (s) deve ser maior que zero"}
-    if any(l < 0 for l in lambdas_):
-        return {"Erro": "Taxas de chegada (λi) devem ser maiores ou iguais a zero"}
+# ----------------------------------------------------------------------
 
-    lambda_total = sum(lambdas_)
-    capacidade = servidores * mi
+def calcular_mms_prioridade_sem_interrupcao(lambda_total: float, mi: float, servidores: int, proporcoes_str: str) -> dict:
+    """
+    Função principal. Calcula as métricas do modelo M/M/s com prioridade sem interrupção.
+    """
+    s = servidores
+    
+    try:
+        # 1. Pré-processamento e Validações de Entrada
+        lambdas_i = _calcular_lambda_i(lambda_total, proporcoes_str)
+        
+        if mi <= 0 or s <= 0 or lambda_total < 0:
+            raise ValueError("Taxa de serviço (µ) e servidores (s) devem ser positivos.")
+        
+    except ValueError as e:
+        return {"Erro": f"Erro de entrada: {e}"}
+    
+    # 2. Validação de Estabilidade
+    capacidade = s * mi
     rho = lambda_total / capacidade
 
-    if lambda_total >= capacidade:
-        return {"Erro": "Sistema instável: soma das taxas de chegada deve ser menor que s·µ"}
+    if rho >= 1.0:
+        return {"Erro": f"Sistema instável. Taxa de ocupação (ρ = {rho:.4f}) deve ser menor que 1 (λ < s·µ)."}
 
-    r = lambda_total / mi
-    s = servidores
+    # 3. Cálculo do Termo Base de Espera
+    try:
+        wq_base_inverso = _calcular_wq_geral_inverso(lambda_total, mi, s)
+    except ZeroDivisionError:
+        return {"Erro": "Divisão por zero no cálculo do termo base (r^s é zero ou muito pequeno)."}
+    except Exception as e:
+        return {"Erro": f"Erro no cálculo do termo base: {e}"}
 
-    soma_r = 0.0
-    for j in range(s):
-        soma_r += (r ** j) / math.factorial(j)
-
-    r_pow_s = r ** s
-
-    termo = (math.factorial(s) * (s * mi - lambda_total) / r_pow_s) * soma_r + s * mi
-
+    # 4. Cálculo das Métricas por Classe
+    
     resultados = {}
+    lambda_acumulada_i_menos_1 = 0.0 # Σ λj, j=1 a i-1
 
-    for k, lambda_k in enumerate(lambdas_):
-        soma_i_menos_1 = sum(lambdas_[:k])
-        soma_i = soma_i_menos_1 + lambda_k
+    for i, lambda_i in enumerate(lambdas_i):
+        classe_id = i + 1
+        
+        # Fatores de Prioridade
+        lambda_acumulada_i = lambda_acumulada_i_menos_1 + lambda_i
 
-        termo2 = 1.0 - soma_i_menos_1 / capacidade
-        termo3 = 1.0 - soma_i / capacidade
+        fator_prioridade_1 = 1.0 - lambda_acumulada_i_menos_1 / capacidade
+        fator_prioridade_2 = 1.0 - lambda_acumulada_i / capacidade
 
-        if termo <= 0 or termo2 <= 0 or termo3 <= 0:
-            return {"Erro": f"Divisão por zero/negativo na classe {k+1}"}
+        if fator_prioridade_1 <= 0 or fator_prioridade_2 <= 0:
+             return {"Erro": f"Fator de prioridade negativo/zero na Classe {classe_id}. (sµ={capacidade:.2f})"}
 
-        Wq = 1.0 / (termo * termo2 * termo3) ### Da forma realizada no exercício (na explicação é invertido com W)
-        W = Wq + 1.0 / mi ### Da forma realizada no exercício (na explicação é invertido com Wq)    
-        L = lambda_k * W
-        Lq = L - lambda_k / mi
-
-        resultados[f"\n\n•Classe {k+1}"] = {
+        # Wq,i = Wq_geral / (Fator_1 * Fator_2)
+        Wq = 1.0 / (wq_base_inverso * fator_prioridade_1 * fator_prioridade_2)
+        
+        # Métricas de Little
+        W = Wq + 1.0 / mi 
+        L = lambda_i * W
+        Lq = lambda_i * Wq 
+        
+        lambda_acumulada_i_menos_1 = lambda_acumulada_i # Atualiza a soma para o próximo loop
+        
+        resultados[f"Classe {classe_id}"] = {
+            "Taxa de chegada da classe (λi)": lambda_i,
+            "Número médio de clientes no sistema (L)": L,
+            "Número médio de clientes na fila (Lq)": Lq,
+            "Tempo médio gasto no sistema (W)": W,
+            "Tempo médio gasto na fila (Wq)": Wq,
             "Taxa de ocupação total (ρ)": rho,
-            "\n    Taxa de chegada da classe (λi)": lambda_k,
-            "\n    Número médio de clientes no sistema (L)": L,
-            "\n    Número médio de clientes na fila (Lq)": Lq,
-            "\n    Tempo médio gasto no sistema (W)": W,
-            "\n    Tempo médio gasto na fila (Wq)": Wq,
         }
 
     return arredondar(resultados)
-
-
-class MMSPrioridadeSemInterrupcaoModelo():
-    @property
-    def nome(self):
-        return "Prioridade sem interrupção"  # Nome do modelo
-
-   
-
-    # Cálculo dos resultados do modelo
-    def calcular(self, **k):
-        taxas_str = k["lambdas_"]
-        lambdas_ = [
-            float(x.strip())
-            for x in taxas_str.split(",")
-            if x.strip() != ""
-        ]
-        return mms_prioridade_sem_interrupcao(
-            lambdas_,
-            float(k["mi"]),
-            int(k["servidores"]),
-        )

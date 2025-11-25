@@ -2,73 +2,116 @@ import math
 from math import factorial
 
 class Mmsk:
-    """
-    Modelo de Fila M/M/s/K (s servidores, Capacidade Finita K)
-    (Ref: Teoria... MMsK e MMsN... p. 11-12) [cite: 1105, 1109, 1112, 1118, 1119, 1120]
-    Requisito: K >= s
-    """
+    # ... (Seu __init__ permanece inalterado)
+
     def __init__(self, lam, mi, s, k):
         if k < s:
             raise ValueError(f"K ({k}) deve ser maior ou igual a s ({s}).")
+        if mi == 0:
+            raise ValueError("mi (taxa de atendimento) não pode ser zero.")
+            
         self.lam = lam
         self.mi = mi
         self.s = s
         self.k = k
-        if mi == 0:
-            raise ValueError("mi (taxa de atendimento) não pode ser zero.")
-        self.r = lam / mi      # λ/μ
-        self.rho = lam / (s * mi)  # ρ = λ/(sμ) [cite: 1110]
+        self.r = lam / mi      # r = λ/μ
+        self.rho = lam / (s * mi)  # ρ = λ/(sμ)
+
+    def prob_n_clientes(self, n: int, p0: float) -> float:
+        """Calcula a probabilidade de haver EXATAMENTE 'n' clientes (Pn) para M/M/s/K."""
+        if n < 0 or n > self.k:
+            return 0.0
+            
+        r = self.lam / self.mi
+        
+        if n < self.s:
+            # Pn = (r^n / n!) * P0
+            return (math.pow(r, n) / factorial(n)) * p0
+        else: # self.s <= n <= self.k
+            # Pn = (r^s / s! * ρ^(n-s)) * P0
+            rho_s = self.lam / (self.s * self.mi)
+            
+            termo_s = math.pow(r, self.s) / factorial(self.s)
+            fator_rho = math.pow(rho_s, n - self.s)
+            
+            return termo_s * fator_rho * p0
 
     def mmsk(self):
         """Calcula as métricas do modelo M/M/s/K."""
         
-        # --- Cálculo de P0 --- [cite: 1105]
-        # 1/P0 = [ Σ_{n=0}^{s-1} (r^n / n!) ] + [ (r^s / s!) * Σ_{j=0}^{K-s} ρ^j ]
+        # --- 1. Cálculo de P0 (permanece inalterado e correto) ---
         soma_p0_1 = 0.0
         for n in range(self.s):
             soma_p0_1 += math.pow(self.r, n) / factorial(n)
             
         soma_p0_2_geometrica = 0.0
-        if self.rho == 1.0:
+        if abs(self.rho - 1.0) < 1e-9:
             soma_p0_2_geometrica = self.k - self.s + 1
         else:
             soma_p0_2_geometrica = (1 - math.pow(self.rho, self.k - self.s + 1)) / (1 - self.rho)
+            
         termo_s = (math.pow(self.r, self.s) / factorial(self.s)) * soma_p0_2_geometrica
-        p0 = 1 / (soma_p0_1 + termo_s)
+        inverso_p0 = soma_p0_1 + termo_s
+        p0 = 1 / inverso_p0
         
-        # --- Pk (Probabilidade de perda) --- [cite: 1112]
-        # Pk = (r^K / (s! * s^(K-s))) * P0
-        pk = (math.pow(self.r, self.k) / (factorial(self.s) * math.pow(self.s, self.k - self.s))) * p0
+        # --- 2. Cálculo de L (Número Médio no Sistema) ---
+        l = 0.0
+        for n in range(self.k + 1):
+            # L = Σ n * Pn. Chamamos a nova função auxiliar
+            pn = self.prob_n_clientes(n, p0)
+            l += n * pn
+            
+        # --- 3. Pk e Lq (Não altera) ---
+        # Pk = Pn para n=K
+        pk = self.prob_n_clientes(self.k, p0)
         
-        # --- Lq --- [cite: 1118]
-        if self.rho == 1.0:
-             # Caso especial ρ = 1
+        # Lq (Permanecemos com a fórmula de Lq para M/M/s/K, pois a fórmula de soma é complexa)
+        if abs(self.rho - 1.0) < 1e-9:
              lq = ( (p0 * math.pow(self.r, self.s)) / factorial(self.s) ) * ( ( (self.k - self.s) * (self.k - self.s + 1) ) / 2 )
         else:
             fator_comum = (p0 * math.pow(self.r, self.s) * self.rho) / (factorial(self.s) * math.pow(1 - self.rho, 2))
             termo_chaves = 1 - math.pow(self.rho, self.k - self.s) - (self.k - self.s) * math.pow(self.rho, self.k - self.s) * (1 - self.rho)
             lq = fator_comum * termo_chaves
 
-        # --- Outras métricas --- [cite: 1119, 1120, 1124]
-        lam_efetiva = self.lam * (1 - pk)   # [cite: 1119]
-        wq = lq / lam_efetiva if lam_efetiva != 0 else 0.0 # [cite: 1119]
-        w = wq + (1 / self.mi)            # W = Wq + E(S)
-        l = lam_efetiva * w               # L = λ_barra * W [cite: 1124]
+        # --- 4. CÁLCULO DE W E Wq USANDO O L CORRETO ---
+        
+        # Métrica de chegada
+        lam_efetiva = self.lam * (1 - pk) 
+        l_perda = self.lam * pk 
+        
+        # W (Tempo Médio no Sistema)
+        # W = L / λ_efetiva (Fórmula de Little, agora usando L calculado por soma)
+        w = l / lam_efetiva if lam_efetiva != 0 else 0.0
+        
+        # Wq (Tempo Médio na Fila)
+        # Wq = W - E(S)
+        wq = w - (1 / self.mi)
+        # Se Lq for calculado por fórmula analítica, podemos usar Wq = Lq / λ_efetiva
 
-        return p0, pk, l, lq, w, wq, lam_efetiva
+        # Verificação de consistência: Lq deve ser igual a λ_efetiva * Wq
+        # Usaremos as definições baseadas em L e Lq (fórmula analítica)
+        
+        # Ajuste Final para consistência:
+        # 1. L (Soma) -> W (Little)
+        # 2. W -> Wq (Diferença)
+        # 3. Lq (Fórmula analítica) -> OK
+        
+        return p0, pk, l, lq, w, wq, lam_efetiva, l_perda
 
     def resultado(self):
-        """Exibe os resultados formatados no console."""
+        """Exibe os resultados formatados no console, incluindo L_perda."""
         print(f"--- Modelo M/M/{self.s}/K (K={self.k}) ---")
         print(f"Taxa de tráfego (ρ): {self.rho:.4f} (r = {self.r:.4f})")
         try:
-            p0, pk, l, lq, w, wq, lam_efetiva = self.mmsk()
+            p0, pk, l, lq, w, wq, lam_efetiva, l_perda = self.mmsk()
             print(f"Probabilidade do sistema estar vazio (P0): {p0:.4f}")
             print(f"Probabilidade do sistema estar cheio (Pk): {pk:.4f} (Prob. de perda)")
             print(f"Taxa de chegada efetiva (λ_barra): {lam_efetiva:.4f}")
+            print(f"Número esperado de perdas (L_perda): {l_perda:.4f}") # NOVO
+            print("--------------------------------------------------")
             print(f"Número médio de clientes no sistema (L): {l:.4f}")
             print(f"Número médio de clientes na fila (Lq): {lq:.4f}")
             print(f"Tempo médio no sistema (W): {w:.4f}")
             print(f"Tempo médio na fila (Wq): {wq:.4f}")
         except ValueError as e:
-            print(e)
+            print(f"ERRO: {e}")
