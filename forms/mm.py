@@ -91,6 +91,7 @@ class Mm:
                 
                 return termo_s * fator_rho * p0
 
+
     def prob_wq_maior_que_t(self, t: float) -> float:
         """
         Calcula a probabilidade de o tempo de espera na fila ser maior que t: P(Wq > t).
@@ -112,17 +113,60 @@ class Mm:
 
     def prob_w_maior_que_t(self, t: float) -> float:
         """
-        Calcula a probabilidade de o tempo total no sistema ser maior que t: P(W > t).
-        Esta fórmula é específica para o modelo M/M/1.
+        Calcula a probabilidade de o tempo total no sistema (W) ser maior que t: P(W > t).
+        Válido para M/M/1 e M/M/s (ρ < 1).
         """
-        if self.s != 1:
-            raise ValueError("O cálculo P(W > t) = e^-(μ - λ)t é aplicável somente ao modelo M/M/1.")
-
-        if self.mi <= self.lam:
+        # 1. Checagem de Estabilidade
+        if self.s * self.mi <= self.lam: # sμ <= λ
             return 1.0
             
-        return math.exp(-(self.mi - self.lam) * t)
+        # 2. Requer que as métricas (principalmente P0) sejam calculadas
+        p0, _, _, _, _ = self.mms()
+        
+        if self.s == 1:
+            # M/M/1: P(W > t) = e^-(μ - λ)t
+            return math.exp(-(self.mi - self.lam) * t)
+            
+        else: # M/M/s (s > 1)
+            # --- NOVO CÁLCULO DE P(Wq > 0) USANDO ERLANG C ---
+            
+            r = self.lam / self.mi # r = λ/μ
+            rho_s = self.lam / (self.s * self.mi) # ρ = λ / sμ
+            
+            # 1. Calcule P(Wq > 0) (Fator de Erlang C)
+            try:
+                # Numerador: (r^s / s!)
+                termo_erlang_numerador = math.pow(r, self.s) / math.factorial(self.s)
+                
+                # Denominador: (1 - ρ)
+                termo_erlang_denominador = (1.0 - rho_s)
+                
+                # P(Wq > 0) = [P0 * (r^s / s!)] / (1 - ρ)
+                pwq0_maior = (p0 * termo_erlang_numerador) / termo_erlang_denominador
+                
+            except ValueError: # Captura erros como math.factorial de números grandes
+                # Pode ser necessário um cálculo mais robusto para n! (e.g., função auxiliar)
+                # Neste caso, vamos assumir que o erro é grave e retornar 0 ou levantar a exceção.
+                return 0.0 # Ou levantar a exceção
+            
+            # Garante que P(Wq > 0) está no intervalo [0, 1]
+            pwq0_maior = max(0.0, min(1.0, pwq0_maior))
 
+            # 2. Calcule P(Wq = 0)
+            pwq0_igual = 1.0 - pwq0_maior
+            
+            # 3. Fórmula P(W > t) = P(Wq=0) * e^-(μt) + P(Wq>0) * e^-(sμ(1-ρ)t)
+            
+            # Termo 1: Cliente é atendido imediatamente (Taxa: μ)
+            termo1 = pwq0_igual * math.exp(-self.mi * t)
+            
+            # Termo 2: Cliente espera na fila (Taxa: sμ(1-ρ))
+            taxa_do_termo2 = self.mi * self.s * (1 - rho_s)
+            termo2 = pwq0_maior * math.exp(-taxa_do_termo2 * t)
+            
+            # P(W > t) = Termo 1 + Termo 2
+            return termo1 + termo2
+            
     def resultado(self):
         """Exibe os resultados formatados no console."""
         try:

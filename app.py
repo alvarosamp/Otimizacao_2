@@ -60,7 +60,7 @@ class FilaApp:
         frame = ttk.LabelFrame(parent, text="Resultados", padding=10)
         frame.pack(side='bottom', expand=True, fill='both', padx=5, pady=5)
         
-        text_area = tk.Text(frame, height=10, state='disabled', font=("Consolas", 10))
+        text_area = tk.Text(frame, height=10, state='disabled', font=("Consolas", 20))
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text_area.yview)
         text_area.configure(yscrollcommand=scrollbar.set)
         
@@ -122,19 +122,23 @@ class FilaApp:
         
         ttk.Separator(input_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=5)
 
-        # Linha 4: Tempo N para Probabilidade W>t e Wq>t
-        ttk.Label(input_frame, text="Tempo t (em Minutos) para P(W>t) e P(Wq>t):").grid(row=4, column=0, sticky='w', padx=5, pady=5)
-        ent_t_minutos = ttk.Entry(input_frame)
-        ent_t_minutos.insert(0, "60") 
-        ent_t_minutos.grid(row=4, column=1, padx=5, pady=5)
+        # Linha 4: Tempo N para Probabilidade Wq>t
+        ttk.Label(input_frame, text="Tempo t (em Minutos) para P(Wq>t):").grid(row=4, column=0, sticky='w', padx=5, pady=5)
+        ent_wqt_minutos = ttk.Entry(input_frame)
+        ent_wqt_minutos.insert(0, "60") 
+        ent_wqt_minutos.grid(row=4, column=1, padx=5, pady=5)
+
+        # Linha 4.5: Tempo N para Probabilidade W>t
+        ttk.Label(input_frame, text="Tempo t (em Minutos) para P(W>t):").grid(row=5, column=0, sticky='w', padx=5, pady=5)
+        ent_wt_minutos = ttk.Entry(input_frame)
+        ent_wt_minutos.insert(0, "60") 
+        ent_wt_minutos.grid(row=5, column=1, padx=5, pady=5)
         
-        # --- NOVO CAMPO ---
         # Linha 5: Número n de clientes para Pn
-        ttk.Label(input_frame, text="Número n de Clientes para Pn:").grid(row=5, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(input_frame, text="Número n de Clientes para Pn:").grid(row=6, column=0, sticky='w', padx=5, pady=5)
         ent_n_clientes = ttk.Entry(input_frame)
         ent_n_clientes.insert(0, "5") # Exemplo: probabilidade de 5 clientes estarem no sistema
-        ent_n_clientes.grid(row=5, column=1, padx=5, pady=5)
-        # --- FIM NOVO CAMPO ---
+        ent_n_clientes.grid(row=6, column=1, padx=5, pady=5)
         
         # Área de Output
         out_text = self.create_output_area(tab)
@@ -144,8 +148,11 @@ class FilaApp:
             l = float(ent_lam.get())
             m = float(ent_mi.get())
             s = int(ent_s.get())
-            t_min = float(ent_t_minutos.get()) 
-            t_horas = t_min / 60.0 # Converte t para horas
+            twq_min = float(ent_wqt_minutos.get()) 
+            twq_horas = twq_min / 60.0 # Converte t para horas
+            tw_min = float(ent_wt_minutos.get()) 
+            tw_horas = tw_min / 60.0 # Converte t para horas
+
 
             # --- NOVO VALOR ---
             n_clientes = int(ent_n_clientes.get())
@@ -156,28 +163,44 @@ class FilaApp:
             # 2. Imprime as métricas básicas (L, Lq, W, Wq, P0, etc)
             modelo.resultado() 
             
-            # 3. Imprime as probabilidades
-            print("-" * 30)
-            print("--- Cálculos de Probabilidade ---")
+            print("-" * 50)
+            print(f"--- Probabilidades P até {n_clientes} ---")
             
-            # Pn
-            prob_n = modelo.prob_n_clientes(n=n_clientes)
-            print(f"P({n_clientes}) (Prob. de {n_clientes} clientes no sistema): {prob_n:.4f} ({prob_n*100:.2f}%)")
+            prob_acumulada = 0.0
+            
+            # O for loop utiliza n_clientes + 1 para incluir o valor de n_clientes
+            for i in range(n_clientes + 1): 
+                try:
+                    # Calcula a probabilidade exata P(i)
+                    prob_i = modelo.prob_n_clientes(n=i)
+                    
+                    # Acumula a probabilidade
+                    prob_acumulada += prob_i
+                    
+                    # Imprime P(i)
+                    print(f"P(Sistema = {i:<3}) = {prob_i:.6f} ({prob_i*100:.4f}%)")
+                    
+                except Exception as e:
+                    # Em caso de erro (ex: problema de convergência em P0), para
+                    print(f"Erro ao calcular P({i}): {e}")
+                    break 
+            
+            # 4. Imprime a probabilidade acumulada no final
+            print("-" * 50)
+            print(f"SOMA ACUMULADA P(Sistema <= {n_clientes})")
+            print(f"P(Sistema <= {n_clientes}) = {prob_acumulada:.6f} ({prob_acumulada*100:.4f}%)")
+            print("-" * 50)
 
             # P(Wq > t)
-            prob_wq = modelo.prob_wq_maior_que_t(t=t_horas)
-            print(f"P(Wq > {t_min:.2f} min) (Esperar na Fila): {prob_wq:.4f} ({prob_wq*100:.2f}%)")
+            prob_wq = modelo.prob_wq_maior_que_t(t=twq_horas)
+            print(f"P(Wq > {twq_min:.2f} min) (Esperar na Fila): {prob_wq:.4f} ({prob_wq*100:.2f}%)")
 
             # P(W > t)
-            if s == 1:
-                prob_w = modelo.prob_w_maior_que_t(t=t_horas)
-                print(f"P(W > {t_min:.2f} min) (Ficar no Sistema): {prob_w:.4f} ({prob_w*100:.2f}%)")
-            else:
-                print(f"P(W > {t_min:.2f} min) (Ficar no Sistema): Fórmula simplificada P(W>t) indisponível para M/M/{modelo.s} (s>1).")
-
+            prob_w = modelo.prob_w_maior_que_t(t=tw_horas)
+            print(f"P(W > {tw_min:.2f} min) (Ficar no Sistema): {prob_w:.4f} ({prob_w*100:.2f}%)")
 
         # Botão Calcular
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=6, column=0, columnspan=2, pady=10)
+        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=7, column=0, columnspan=2, pady=10)
 
     # --- ABA 2: M/G/1 e Prioridades ---
     def create_tab_mg1(self):
