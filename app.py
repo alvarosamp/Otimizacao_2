@@ -10,7 +10,7 @@ try:
     from forms.mmsk import Mmsk
     from forms.mm1n import Mm1n
     from forms.mmsn import Mmsn
-    from forms.prioridadesInterrupcao import MMSPrioridadeComInterrupcaoModelo, mms_prioridade_com_interrupcao
+    from forms.prioridadesInterrupcao import calcular_mms_prioridade_com_interrupcao
     from forms.prioridadesSemInterrup import calcular_mms_prioridade_sem_interrupcao
     from ListaExercicios import rodar_testes
 except ImportError as e:
@@ -250,57 +250,98 @@ class FilaApp:
         ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=5, column=0, columnspan=2, pady=10)
     
     def create_tab_mms_priority_preemptive(self):
+        """
+        Cria a aba para o modelo M/M/s com Prioridade Sem Interrupção, aceitando λ total e proporções.
+        """
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="MMS Prioridade (Interrupção)")
+        self.notebook.add(tab, text="MMS Prioridade (Com Interrupção)")
         
         input_frame = ttk.Frame(tab, padding=10)
         input_frame.pack(fill='x')
         
-        # 1. Input λi (Lista)
-        ttk.Label(input_frame, text="Taxas de Chegada (λi, separadas por vírgula):").grid(row=0, column=0, sticky='w')
-        ent_lambdas = ttk.Entry(input_frame, width=50)
-        ent_lambdas.insert(0, "1.5, 2.0, 0.5")
-        ent_lambdas.grid(row=0, column=1, padx=5, pady=5)
+        # --- ENTRADAS DO USUÁRIO ---
         
-        # 2. Input μ
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w')
+        ttk.Label(input_frame, text="Taxa de Chegada Total (λ):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        ent_lam_total = ttk.Entry(input_frame)
+        ent_lam_total.insert(0, "10.0")
+        ent_lam_total.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
         ent_mi = ttk.Entry(input_frame)
         ent_mi.insert(0, "4.0")
         ent_mi.grid(row=1, column=1, padx=5, pady=5)
         
-        # 3. Input s
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w')
+        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
         ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "1")
+        ent_s.insert(0, "2")
         ent_s.grid(row=2, column=1, padx=5, pady=5)
         
+        ttk.Label(input_frame, text="Proporções de Chegada (%, sep. por vírgula):").grid(row=3, column=0, sticky='w', padx=5, pady=5)
+        ent_proporcoes = ttk.Entry(input_frame, width=50)
+        ent_proporcoes.insert(0, "40, 35, 25") 
+        ent_proporcoes.grid(row=3, column=1, padx=5, pady=5)
+        
+        # --- LÓGICA DE EXECUÇÃO ---
+
         out_text = self.create_output_area(tab)
         
         def run():
-            # A função de cálculo que você forneceu
-            resultados = mms_prioridade_com_interrupcao(
-                lambdas_=[
-                    float(x.strip())
-                    for x in ent_lambdas.get().split(',')
-                    if x.strip()
-                ],
-                mi=float(ent_mi.get()),
-                servidores=int(ent_s.get())
-            )
-            
-            # Formata e printa os resultados no console/widget
-            print("\n--- Resultados MMS Prioridade com Interrupção ---\n")
-            for classe, vals in resultados.items():
-                if classe == "Erro":
-                    print(f"ERRO: {vals}")
+            """
+            Função principal de execução. Usa o nome consistente para o cálculo.
+            """
+            try:
+                # 1. Captura e conversão das entradas
+                lambda_total = float(ent_lam_total.get())
+                mi = float(ent_mi.get())
+                servidores = int(ent_s.get())
+                proporcoes_str = ent_proporcoes.get()
+
+                # 2. Chamada da função de cálculo com NOME CONSISTENTE
+                resultados = calcular_mms_prioridade_com_interrupcao(
+                    lambda_total=lambda_total,
+                    mi=mi,
+                    servidores=servidores,
+                    proporcoes_str=proporcoes_str
+                )
+                
+                # 3. Formatação e Exibição dos Resultados
+                
+                if "Erro" in resultados:
+                    print(f"ERRO DE CÁLCULO: {resultados['Erro']}")
                     return
-                print(f"Classe: {classe.replace('Classe ', '')}")
-                for key, value in vals.items():
-                    print(f"    {key.strip()} = {value}")
-                print("-" * 30)
+
+                rho_valor = resultados['Classe 1']['Taxa de ocupação total (ρ)']
+                
+                print("\n" + "="*50)
+                print("--- RESULTADOS MMS PRIORIDADE SEM INTERRUPÇÃO ---")
+                print(f"λ Total: {lambda_total:.4f} | µ: {mi:.4f} | Servidores: {servidores}")
+                print(f"Capacidade (sμ): {servidores * mi:.4f} | Ocupação (ρ): {rho_valor:.4f}")
+                print("="*50)
+
+                for classe_nome, vals in resultados.items():
+                    print(f"\n## {classe_nome}")
+                    
+                    lambda_i = vals['Taxa de chegada da classe (λi)']
+                    print(f"**Taxa de Chegada (λi): {lambda_i:.6f}**")
+                    
+                    for key, value in vals.items():
+                        if key.startswith("Taxa de chegada") or key.endswith("(ρ)"):
+                            continue
+                        
+                        key_limpa = key.strip().replace('\n', '')
+                        print(f"* {key_limpa}: {value:.6f}")
+                            
+                    print("---")
+                
+            except ValueError as e:
+                print(f"ERRO DE ENTRADA: Verifique se todos os campos são números válidos. Detalhe: {e}")
+            except NameError:
+                print("ERRO: A função 'calcular_mms_prioridade_com_interrupcao' não foi encontrada. Certifique-se de que foi importada/definida.")
+            except Exception as e:
+                print(f"Ocorreu um erro inesperado: {e}")
 
 
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=3, column=0, columnspan=2, pady=10)
+        ttk.Button(input_frame, text="Calcular Prioridade", command=lambda: self.capture_output(run, out_text)).grid(row=4, column=0, columnspan=2, pady=10)
     
     def create_tab_mms_priority_nonpreemptive(self):
         """

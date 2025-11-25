@@ -1,33 +1,10 @@
+import math
 from math import factorial
 
+# --- FUNÇÕES AUXILIARES ---
 
-'''
--Script responsável pelos cálculos do modelo com prioridade e interrupção
-
--Parâmetros:
-λi: taxa de chegada da classe i            L: número médio de clientes no sistema
-µ: taxa de atendimento                     Lq: número médio de clientes na fila
-s: número de servidores                    W: tempo médio gasto no sistema
-Wq: tempo médio gasto na fila
-
--Fórmulas:
-• Para s = 1:
-    W_i = (1/µ) / [(1 - Σ_{j=1}^{i-1} λ_j / µ) * (1 - Σ_{j=1}^{i} λ_j / µ)]
-    Wq_i = W_i - 1/µ
-    L_i  = (Σ_{j=1}^{i} λ_j) * W_i
-    Lq_i = L_i - (Σ_{j=1}^{i} λ_j)/µ
-
-• Para s > 1:
-    Usa-se Erlang C com λ̄_i = Σ_{j=1}^{i} λ_j:
-    Pw(λ̄_i) = ErlangC(λ̄_i, µ, s)
-    Wq_i = Pw(λ̄_i) / (sµ - λ̄_i)
-    W_i  = Wq_i + 1/µ
-    L_i  = λ_i * W_i
-    Lq_i = λ_i * Wq_i
-'''
-
-# Função para arredondar valores
 def arredondar(valor, casas=6):
+    """Função auxiliar para arredondar valores."""
     if isinstance(valor, float):
         return round(valor, casas)
     if isinstance(valor, dict):
@@ -36,112 +13,153 @@ def arredondar(valor, casas=6):
         return [arredondar(v, casas) for v in valor]
     return valor
 
-# Função principal do modelo com prioridade e interrupção
-def mms_prioridade_com_interrupcao(lambdas_, mi, servidores):
-    # Validação básica
-    if mi <= 0:
-        return {"Erro": "Taxa de serviço deve ser maior que zero"}
-    if servidores <= 0:
-        return {"Erro": "Número de servidores deve ser maior que zero"}
-    if any(l < 0 for l in lambdas_):
-        return {"Erro": "Taxas de chegada devem ser maiores ou iguais a zero"}
+def _erlang_c(lam: float, mi: float, s: int) -> float:
+    """Calcula a Probabilidade de Espera (Pw) usando a fórmula de Erlang C."""
+    a = lam / mi # r = λ/µ
+    
+    # 1. Numerador: (a^s / s!) * (sµ / (sµ - λ))
+    try:
+        if s * mi - lam <= 0:
+            raise ValueError("Instabilidade local no Erlang C.")
+            
+        prob_espera_num = (math.pow(a, s) / factorial(s)) * (s * mi / (s * mi - lam))
+        
+    except ValueError as e:
+        raise ValueError(f"Instabilidade local no cálculo de Erlang C: {e}")
+    except ZeroDivisionError:
+        return 0.0
 
-    lambdas_total = sum(lambdas_)
-    capacidade = mi * servidores
-    rho = lambdas_total / capacidade
+    # 2. Denominador: Σ_{k=0}^{s-1} (a^k / k!) + Numerador
+    sum_terms = sum(math.pow(a, k) / factorial(k) for k in range(s))
+    
+    prob_espera_denom = sum_terms + prob_espera_num
+    
+    # Pw = Numerador / Denominador
+    return prob_espera_num / prob_espera_denom
 
-    if rho >= 1:
-        return {"Erro": "Soma das taxas deve ser menor que a capacidade do servidor"}
+# ----------------------------------------------------------------------
+
+def calcular_mms_prioridade_com_interrupcao(lambda_total: float, mi: float, servidores: int, proporcoes_str: str) -> dict:
+    """
+    Calcula as métricas do modelo M/M/s com prioridade e interrupção (Preemptive Priority),
+    aplicando as fórmulas L = λ̄_i * W e Lq = L - λ_i / μ.
+    """
+    s = servidores
+    
+    # 1. Pré-processamento: Calcular λi a partir de λ_total e proporções
+    try:
+        proporcoes = [
+            float(x.strip())
+            for x in proporcoes_str.split(",")
+            if x.strip() != ""
+        ]
+        if not proporcoes:
+            return {"Erro": "Nenhuma proporção de chegada válida fornecida."}
+
+        soma_proporcoes = sum(proporcoes)
+        if soma_proporcoes <= 0:
+            return {"Erro": "A soma das proporções de chegada deve ser maior que zero."}
+        
+        lambdas_ = [(prop / soma_proporcoes) * lambda_total for prop in proporcoes]
+        
+    except ValueError:
+        return {"Erro": "As proporções de chegada devem ser números válidos separados por vírgula."}
+
+    # 2. Validações e Estabilidade Global
+    capacidade = mi * s
+    rho = lambda_total / capacidade
+
+    if mi <= 0 or s <= 0 or rho >= 1:
+        return {"Erro": "Parâmetros inválidos (µ, s) ou sistema instável (λ > s·µ)."}
 
     resultados = {}
+    Ws_acumulado = [] # Armazena W_i para o cálculo subsequente (s > 1)
 
-    # Para o caso s = 1
-    if servidores == 1:
-        for i, lam_i in enumerate(lambdas_):
-            soma_lambdas = sum(lambdas_[j] for j in range(i + 1))
-            soma_lambdas_i_menos_1 = sum(lambdas_[j] for j in range(i)) if i > 0 else 0.0
+    # 3. Iteração sobre as classes (i=0, 1, 2, ...)
+    for i, lam_i in enumerate(lambdas_):
+        classe_id = i + 1
+        
+        # λ̄_i: Taxa de chegada acumulada (λ1 + ... + λi)
+        lambda_acumulada_i = sum(lambdas_[j] for j in range(i + 1))
+        lambda_acumulada_i_menos_1 = sum(lambdas_[j] for j in range(i)) if i > 0 else 0.0
 
-            denom = (1.0 - (soma_lambdas_i_menos_1 / mi)) * (1.0 - (soma_lambdas / mi))
+        # Inicializa variáveis
+        W_bar = None 
+        W = 0.0
+        Wq = 0.0
+        L = 0.0
+        Lq = 0.0
+        
+        # Se λi = 0, L, Lq, W, Wq são 0. O código continua para o armazenamento.
+        if lam_i == 0.0:
+            pass 
+
+        # --- CASO S = 1 (M/M/1 com Prioridade) ---
+        elif s == 1:
+            denom = (1.0 - (lambda_acumulada_i_menos_1 / mi)) * (1.0 - (lambda_acumulada_i / mi))
 
             if denom <= 0:
-                return {"Erro": f"Denominador inválido na classe {i+1}. Verifique os dados de λ e µ."}
+                return {"Erro": f"Denominador inválido na classe {classe_id}. (Instabilidade local: λ̄_i >= µ)"}
 
             W = (1.0 / mi) / denom
             Wq = W - (1.0 / mi)
+            
+            # CORREÇÃO 1: L agora usa a taxa acumulada (λ̄_i)
+            L = lambda_acumulada_i * W
 
-            L = soma_lambdas * W
-            Lq = L - (soma_lambdas / mi)
+            # CORREÇÃO 2: Lq usa a fórmula de diferença Lq = L - λ_i / μ
+            Lq = L - (lam_i / mi) 
 
-            resultados[f"\n\n•Classe {i+1}"] = {
-                "Taxa de ocupação total (ρ)": rho,
-                "\n    Taxa de chegada da classe (λi)": lam_i,
-                "\n    Número médio de clientes no sistema (L)": L,
-                "\n    Número médio de clientes na fila (Lq)": Lq,
-                "\n    Tempo médio gasto no sistema (W)": W,
-                "\n    Tempo médio gasto na fila (Wq)": Wq,
-            }
+        # --- CASO S > 1 (M/M/s com Prioridade) ---
+        else:
+            try:
+                Pw_bar = _erlang_c(lambda_acumulada_i, mi, s)
+                Wq_bar = Pw_bar / (capacidade - lambda_acumulada_i)
+                W_bar = Wq_bar + 1.0 / mi
+                
+            except ValueError as e:
+                 return {"Erro": f"Instabilidade local na Classe {classe_id}: {e}"}
 
-    # Para o caso s > 1
-    else:
-        def Pw(lambd, mi, s):
-            a = lambd / mi
-            sum_terms = sum((a ** k) / factorial(k) for k in range(s))
-            last_term = (a ** s / factorial(s)) * (s * mi) / (s * mi - lambd)
-            if s * mi - lambd <= 0:
-                return {"Erro": "Denominador inválido no cálculo de Pw. Verifique os dados de λ e µ."}
-            return last_term / (sum_terms + last_term)
-
-        Ws = []
-
-        for i, lam_i in enumerate(lambdas_):
-            soma_lambdas = sum(lambdas_[j] for j in range(i + 1))
-
-            Pw_bar = Pw(soma_lambdas, mi, servidores)
-            Wq_bar = Pw_bar / (servidores * mi - soma_lambdas)
-            W_bar = Wq_bar + 1.0 / mi
-
+            # W_i: Tempo médio no sistema para a classe i
             if i == 0:
                 W = W_bar
             else:
-                soma_previas = sum(lambdas_[j] * Ws[j] for j in range(i))
-                W = (soma_lambdas * W_bar - soma_previas) / lam_i
+                soma_previas = sum(lambdas_[j] * Ws_acumulado[j] for j in range(i))
+                
+                if lam_i == 0:
+                    W = 0.0
+                else:
+                    W = (lambda_acumulada_i * W_bar - soma_previas) / lam_i
 
-            Ws.append(W)
+            Ws_acumulado.append(W) 
 
             Wq = W - 1.0 / mi
+            
+            # CORREÇÃO 1: L agora usa a taxa acumulada (λ̄_i)
+            L = lambda_acumulada_i * W
+            
+            # CORREÇÃO 2: Lq usa a fórmula de diferença Lq = L - λ_i / μ
+            Lq = L - (lam_i / mi)
 
-            L = soma_lambdas * W
-            Lq = L - soma_lambdas / mi
+            # Inicializa resultados para evitar KeyError
+            if f"Classe {classe_id}" not in resultados:
+                resultados[f"Classe {classe_id}"] = {}
 
-            resultados[f"\n\n•Classe {i+1}"] = {
-                "Taxa de ocupação total (ρ)": rho,
-                "\n    Taxa de chegada da classe (λi)": lam_i,
-                "\n    Tempo médio ponderado (W̄)": W_bar,
-                "\n    Número médio de clientes no sistema (L)": L,
-                "\n    Número médio de clientes na fila (Lq)": Lq,
-                "\n    Tempo médio gasto no sistema (W)": W,
-                "\n    Tempo médio gasto na fila (Wq)": Wq,
-            }
+            resultados[f"Classe {classe_id}"]["Tempo médio ponderado (W̄)"] = W_bar
+
+        # 4. Armazenamento dos Resultados
+        # Sobrescreve/Cria o dicionário final com as métricas
+        resultados[f"Classe {classe_id}"] = {
+            "Taxa de chegada da classe (λi)": lam_i,
+            "Número médio de clientes no sistema (L)": L,
+            "Número médio de clientes na fila (Lq)": Lq,
+            "Tempo médio gasto no sistema (W)": W,
+            "Tempo médio gasto na fila (Wq)": Wq,
+            "Taxa de ocupação total (ρ)": rho,
+        }
+        
+        # Adiciona W_bar apenas se s > 1
+        if s > 1 and W_bar is not None:
+            resultados[f"Classe {classe_id}"]["Tempo médio ponderado (W̄)"] = W_bar 
 
     return arredondar(resultados)
-
-
-class MMSPrioridadeComInterrupcaoModelo():
-    @property
-    def nome(self):
-        return "Prioridade com interrupção"  # Nome do modelo
-
-
-    # Cálculo dos resultados do modelo
-    def calcular(self, **k):
-        taxas_str = k["lambdas_"]
-        taxas = [
-            float(x.strip())
-            for x in taxas_str.split(",")
-            if x.strip() != ""
-        ]
-        return mms_prioridade_com_interrupcao(
-            taxas,
-            float(k.get("mi")),
-            int(k["servidores"]),
-        )
