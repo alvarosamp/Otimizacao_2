@@ -1,594 +1,290 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import sys
-import io
+import customtkinter as ctk
+from tkinter import messagebox
+from typing import Any, Dict, List, Optional, Tuple, Callable, Iterable
+from math import exp, factorial
 
-try:
-    from forms.mg1 import Mg1
-    from forms.mm import Mm
-    from forms.mm1k import Mm1k
-    from forms.mmsk import Mmsk
-    from forms.mm1n import Mm1n
-    from forms.mmsn import Mmsn
-    from forms.prioridadesInterrupcao import calcular_mms_prioridade_com_interrupcao
-    from forms.prioridadesSemInterrup import calcular_mms_prioridade_sem_interrupcao
-    from ListaExercicios import rodar_testes
-except ImportError as e:
-    print(f"Detalhe: {e}")
-    sys.exit(1)
+# --- Configuração do CustomTkinter ---
+ctk.set_appearance_mode("System")
+ctk.set_default_color_theme("blue")
 
-class TextRedirector(object):
-    """Classe utilitária para redirecionar o stdout (print) para um widget de Texto do Tkinter."""
-    def __init__(self, widget):
-        self.widget = widget
-
-    def write(self, str_val):
-        self.widget.configure(state='normal')
-        self.widget.insert("end", str_val)
-        self.widget.see("end")
-        self.widget.configure(state='disabled')
-
-    def flush(self):
-        pass
-
-class FilaApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Calculadora de Teoria das Filas")
-        self.root.geometry("800x600")
-        
-        # Estilo
-        style = ttk.Style()
-        style.theme_use('clam')
-        
-        # Container principal (Abas)
-        self.notebook = ttk.Notebook(root)
-        self.notebook.pack(expand=True, fill='both', padx=10, pady=10)
-        
-        # Criar as abas
-        self.create_tab_mms()
-        self.create_tab_mg1()
-        self.create_tab_mms_priority_nonpreemptive() # M/M/s Prioridade Sem Interrupção
-        self.create_tab_mms_priority_preemptive()    # M/M/s Prioridade Com Interrupção
-        self.create_tab_finite_k() # M/M/1/K e M/M/s/K
-        self.create_tab_finite_n() # M/M/1/N e M/M/s/N
-        self.create_tab_lista_exercicios()
-
-    def create_output_area(self, parent):
-        """Cria uma área de texto scrollável para mostrar os resultados."""
-        frame = ttk.LabelFrame(parent, text="Resultados", padding=10)
-        frame.pack(side='bottom', expand=True, fill='both', padx=5, pady=5)
-        
-        text_area = tk.Text(frame, height=10, state='disabled', font=("Consolas", 20))
-        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text_area.yview)
-        text_area.configure(yscrollcommand=scrollbar.set)
-        
-        scrollbar.pack(side='right', fill='y')
-        text_area.pack(side='left', expand=True, fill='both')
-        
-        # Botão limpar
-        btn_clean = ttk.Button(frame, text="Limpar Tela", command=lambda: self.clear_text(text_area))
-        btn_clean.pack(side='top', anchor='ne', pady=2)
-        
-        return text_area
-
-    def clear_text(self, text_widget):
-        text_widget.configure(state='normal')
-        text_widget.delete(1.0, tk.END)
-        text_widget.configure(state='disabled')
-
-    def capture_output(self, func, text_widget, *args):
-        """Executa uma função capturando seus prints para a widget de texto."""
-        old_stdout = sys.stdout
-        sys.stdout = TextRedirector(text_widget)
-        try:
-            text_widget.configure(state='normal')
-            text_widget.insert(tk.END, "\n>>> Calculando...\n")
-            text_widget.configure(state='disabled')
-            func(*args)
-        except Exception as e:
-            text_widget.configure(state='normal')
-            text_widget.insert(tk.END, f"\nERRO: {str(e)}\n")
-            text_widget.configure(state='disabled')
-            messagebox.showerror("Erro no Cálculo", str(e))
-        finally:
-            sys.stdout = old_stdout
-
-    # --- ABA 1: M/M/1 e M/M/s ---
-    def create_tab_mms(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="M/M/s (Infinito)")
-        
-        # Inputs Frame
-        input_frame = ttk.Frame(tab, padding=10)
-        input_frame.pack(fill='x')
-        
-        # Linha 0: Lambda
-        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        ent_lam = ttk.Entry(input_frame)
-        ent_lam.grid(row=0, column=1, padx=5, pady=5)
-        
-        # Linha 1: Mu
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        ent_mi = ttk.Entry(input_frame)
-        ent_mi.grid(row=1, column=1, padx=5, pady=5)
-        
-        # Linha 2: Servidores (s)
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "1")
-        ent_s.grid(row=2, column=1, padx=5, pady=5)
-        
-        ttk.Separator(input_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=5)
-
-        # Linha 4: Tempo N para Probabilidade Wq>t
-        ttk.Label(input_frame, text="Tempo t (em Minutos) para P(Wq>t):").grid(row=4, column=0, sticky='w', padx=5, pady=5)
-        ent_wqt_minutos = ttk.Entry(input_frame)
-        ent_wqt_minutos.insert(0, "60") 
-        ent_wqt_minutos.grid(row=4, column=1, padx=5, pady=5)
-
-        # Linha 4.5: Tempo N para Probabilidade W>t
-        ttk.Label(input_frame, text="Tempo t (em Minutos) para P(W>t):").grid(row=5, column=0, sticky='w', padx=5, pady=5)
-        ent_wt_minutos = ttk.Entry(input_frame)
-        ent_wt_minutos.insert(0, "60") 
-        ent_wt_minutos.grid(row=5, column=1, padx=5, pady=5)
-        
-        # Linha 5: Número n de clientes para Pn
-        ttk.Label(input_frame, text="Número n de Clientes para Pn:").grid(row=6, column=0, sticky='w', padx=5, pady=5)
-        ent_n_clientes = ttk.Entry(input_frame)
-        ent_n_clientes.insert(0, "5") # Exemplo: probabilidade de 5 clientes estarem no sistema
-        ent_n_clientes.grid(row=6, column=1, padx=5, pady=5)
-        
-        # Área de Output
-        out_text = self.create_output_area(tab)
-        
-        def run():
-            # 1. Captura e validação de entradas
-            l = float(ent_lam.get())
-            m = float(ent_mi.get())
-            s = int(ent_s.get())
-            twq_min = float(ent_wqt_minutos.get()) 
-            twq_horas = twq_min / 60.0 # Converte t para horas
-            tw_min = float(ent_wt_minutos.get()) 
-            tw_horas = tw_min / 60.0 # Converte t para horas
+# --- SEUS IMPORTS DE MODELOS ---
+# Importações mantidas do seu código original
+from modelos.mm1 import mm1
+from modelos.mms import mms 
+from modelos.mm1k import mm1k
+from modelos.mmsk import mmsk
+from modelos.mm1n import mm1n
+from modelos.mmsn import mmsn
+from modelos.mg1 import mg1
+# OBS: O código assume que você alterou internamente nos seus modelos de prioridade 
+# para somar L_class e Lq_class conforme sugerido anteriormente.
+from modelos.mms_priority_preemptive import mms_priority_preemptive
+from modelos.mms_priority_non_preemptive import mms_priority_non_preemptive
 
 
-            # --- NOVO VALOR ---
-            n_clientes = int(ent_n_clientes.get())
-            # ------------------
+# Funções auxiliares (mantidas)
+def _comb(n: int, k: int) -> int:
+    if k < 0 or k > n: return 0
+    if k == 0 or k == n: return 1
+    num = 1; den = 1
+    for i in range(1, k + 1):
+        num *= n - (k - i); den *= i
+    return num // den
+
+def erlang_c(lmbda: float, mu: float, s: int) -> float:
+    a = lmbda / mu; rho = a / s
+    if s == 0: return 0.0
+    sum1 = sum(a**k / factorial(k) for k in range(s))
+    if rho >= 1: return 1.0 
+    p0 = 1.0 / (sum1 + (a**s / (factorial(s) * (1 - rho))))
+    return (a**s / (factorial(s) * (1 - rho))) * p0
+
+
+class QueueingApp(ctk.CTk):
+    
+    OPTIONAL_FIELDS = {"n", "t"} 
+
+    MODEL_PARAMS: Dict[str, List[Tuple[str, Optional[List[str]]]]] = {
+        "M/M/1 (Infinito)": [("lambda", None), ("mu", None), ("n", None), ("t", None)],
+        "M/M/s (Infinito)": [("lambda", None), ("mu", None), ("s", None), ("n", None), ("t", None)],
+        "M/G/1 (FCFS)": [("lambda", None), ("mu", None), ("service_distribution", ["exponential", "deterministic", "poisson"]), ("n", None), ("t", None)],
+        "M/M/1/K (Capacidade)": [("lambda", None), ("mu", None), ("K", None), ("n", None), ("t", None)],
+        "M/M/s/K (Capacidade)": [("lambda", None), ("mu", None), ("s", None), ("K", None), ("n", None), ("t", None)],
+        "M/M/1/N (Pop. Finita)": [("lambda", None), ("mu", None), ("N", None), ("n", None), ("t", None)],
+        "M/M/s/N (Pop. Finita)": [("lambda", None), ("mu", None), ("s", None), ("N", None), ("n", None), ("t", None)],
+        "Prioridade com Interrupção": [("mu", None), ("s", None), ("arrival_rates (Ex: 10,5; 5,2)", None)],
+        "Prioridade sem Interrupção": [("mu", None), ("s", None), ("arrival_rates (Ex: 10,5; 5,2)", None)],
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.title("Calculadora de Modelos de Filas")
+        self.geometry("900x600")
+
+        self.model_funcs: Dict[str, Callable] = {
+            "M/M/1 (Infinito)": mm1, "M/M/s (Infinito)": mms,
+            "M/M/1/K (Capacidade)": mm1k, "M/M/s/K (Capacidade)": mmsk,
+            "M/M/1/N (Pop. Finita)": mm1n, "M/M/s/N (Pop. Finita)": mmsn,
+            "M/G/1 (FCFS)": mg1,
+            "Prioridade com Interrupção": mms_priority_preemptive,
+            "Prioridade sem Interrupção": mms_priority_non_preemptive,
+        }
+
+        self.input_vars: Dict[str, ctk.StringVar] = {}
+        self.selected_model = ctk.StringVar(value="M/M/1 (Infinito)")
+        
+        self.create_widgets()
+        self.setup_parameters() 
+        
+    def create_widgets(self):
+        self.grid_columnconfigure(0, weight=0); self.grid_columnconfigure(1, weight=1); self.grid_rowconfigure(0, weight=1)
+
+        # 1. Sidebar
+        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        logo_label = ctk.CTkLabel(self.sidebar_frame, text="Modelos de Fila", font=ctk.CTkFont(size=18, weight="bold"))
+        logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        
+        row_index = 1
+        for model_name in self.model_funcs.keys():
+            model_button = ctk.CTkRadioButton(self.sidebar_frame, text=model_name, command=self.on_model_change, variable=self.selected_model, value=model_name)
+            model_button.grid(row=row_index, column=0, padx=20, pady=(10, 5), sticky="w")
+            row_index += 1
+        self.sidebar_frame.grid_rowconfigure(row_index, weight=1)
+
+        # 2. Main Content
+        self.main_content_frame = ctk.CTkFrame(self, corner_radius=0)
+        self.main_content_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self.main_content_frame.grid_rowconfigure(1, weight=1); self.main_content_frame.grid_columnconfigure(0, weight=1)
+        
+        # 2.1. Parâmetros de Entrada
+        self.param_frame = ctk.CTkScrollableFrame(self.main_content_frame, corner_radius=8, label_text="Parâmetros de Entrada")
+        self.param_frame.grid(row=0, column=0, padx=10, pady=(0, 5), sticky="ew")
+        self.param_frame.grid_columnconfigure(1, weight=1)
+        
+        # 2.2. Botão de Cálculo
+        calculate_button = ctk.CTkButton(self.main_content_frame, text="Calcular Métricas", command=self.calculate, font=ctk.CTkFont(size=14, weight="bold"))
+        calculate_button.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="ew")
+
+        # 2.3. Resultados
+        self.result_container_frame = ctk.CTkFrame(self.main_content_frame, corner_radius=8)
+        self.result_container_frame.grid(row=1, column=0, padx=10, pady=(5, 5), sticky="nsew")
+        self.result_container_frame.grid_columnconfigure(0, weight=1); self.result_container_frame.grid_rowconfigure(0, weight=1)
+        
+        self.result_text = ctk.CTkTextbox(self.result_container_frame, wrap="word", height=200, activate_scrollbars=True)
+        self.result_text.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.result_text.configure(state="disabled", font=ctk.CTkFont(family="Consolas", size=12))
+
+    def setup_parameters(self, event=None):
+        for widget in self.param_frame.winfo_children():
+            widget.destroy()
+        self.input_vars = {}
+
+        current_model = self.selected_model.get()
+        params = self.MODEL_PARAMS.get(current_model, [])
+        self.param_frame.configure(label_text=f"Parâmetros: {current_model}")
+
+        row = 0
+        for name, combo_values in params:
+            label_text = f"{name} (*)" if name in self.OPTIONAL_FIELDS else name 
+            label = ctk.CTkLabel(self.param_frame, text=f"{label_text}:")
+            label.grid(row=row, column=0, sticky="w", padx=(10, 5), pady=5)
+
+            var = ctk.StringVar(value="")
+            self.input_vars[name] = var
+
+            if name == "service_distribution":
+                combo_values_list = combo_values or ["exponential", "deterministic", "poisson"]
+                combo = ctk.CTkComboBox(self.param_frame, variable=var, values=combo_values_list, state="readonly")
+                combo.grid(row=row, column=1, sticky="ew", padx=(5, 10), pady=5)
+                combo.set(combo_values_list[0])
+            else:
+                entry = ctk.CTkEntry(self.param_frame, textvariable=var)
+                entry.grid(row=row, column=1, sticky="ew", padx=(5, 10), pady=5)
+            row += 1
             
-            modelo = Mm(lam=l, mi=m, s=s)
-            
-            # 2. Imprime as métricas básicas (L, Lq, W, Wq, P0, etc)
-            modelo.resultado() 
-            
-            print("-" * 50)
-            print(f"--- Probabilidades P até {n_clientes} ---")
-            
-            prob_acumulada = 0.0
-            
-            # O for loop utiliza n_clientes + 1 para incluir o valor de n_clientes
-            for i in range(n_clientes + 1): 
+        legend_label = ctk.CTkLabel(self.param_frame, text="(*) Campos opcionais (n: prob. de N, t: prob. de tempo)", text_color="#A0A0A0", font=ctk.CTkFont(size=10))
+        legend_label.grid(row=row, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="w")
+        
+    def on_model_change(self):
+        self.setup_parameters()
+        self.result_text.configure(state="normal")
+        self.result_text.delete("1.0", "end")
+        self.result_text.configure(state="disabled")
+
+    def parse_inputs(self) -> Dict[str, Any]:
+        """Tenta converter os valores de string para os tipos corretos."""
+        args: Dict[str, Any] = {}
+        for name, var in self.input_vars.items():
+            value_str = var.get().strip() # Mantém a string original
+
+            # 1. Lida com arrival_rates (lista de floats)
+            if name.startswith("arrival_rates"):
+                if not value_str: raise ValueError(f"O parâmetro '{name}' é obrigatório.")
                 try:
-                    # Calcula a probabilidade exata P(i)
-                    prob_i = modelo.prob_n_clientes(n=i)
+                    # 1. Substitui a vírgula decimal (,) por ponto (.) em toda a string
+                    rates_list_str = value_str.replace(',', '.') 
                     
-                    # Acumula a probabilidade
-                    prob_acumulada += prob_i
+                    # 2. Divide a string usando ponto e vírgula (;) como separador da LISTA
+                    rates = [float(r.strip()) for r in rates_list_str.split(';') if r.strip()]
                     
-                    # Imprime P(i)
-                    print(f"P(Sistema = {i:<3}) = {prob_i:.6f} ({prob_i*100:.4f}%)")
-                    
-                except Exception as e:
-                    # Em caso de erro (ex: problema de convergência em P0), para
-                    print(f"Erro ao calcular P({i}): {e}")
-                    break 
+                    if not rates: raise ValueError("A lista de taxas de chegada não pode estar vazia.")
+                    args["arrival_rates"] = rates
+                except ValueError:
+                    raise ValueError(f"'{name}' inválido. **Use ponto e vírgula (;) para separar as taxas** e vírgula (,) para decimais. Ex: 10,5; 5,2; 3.")
+                continue
+
+            # 2. Lida com service_distribution (string)
+            if name == "service_distribution":
+                if not value_str: raise ValueError(f"O parâmetro '{name}' é obrigatório.")
+                args[name] = value_str
+                continue
+
+            # 3. Lida com campos opcionais vazios ("n" e "t")
+            if name in self.OPTIONAL_FIELDS and not value_str:
+                args[name] = None
+                continue
             
-            # 4. Imprime a probabilidade acumulada no final
-            print("-" * 50)
-            print(f"SOMA ACUMULADA P(Sistema <= {n_clientes})")
-            print(f"P(Sistema <= {n_clientes}) = {prob_acumulada:.6f} ({prob_acumulada*100:.4f}%)")
-            print("-" * 50)
-
-            # P(Wq > t)
-            prob_wq = modelo.prob_wq_maior_que_t(t=twq_horas)
-            print(f"P(Wq > {twq_min:.2f} min) (Esperar na Fila): {prob_wq:.4f} ({prob_wq*100:.2f}%)")
-
-            # P(W > t)
-            prob_w = modelo.prob_w_maior_que_t(t=tw_horas)
-            print(f"P(W > {tw_min:.2f} min) (Ficar no Sistema): {prob_w:.4f} ({prob_w*100:.2f}%)")
-
-        # Botão Calcular
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=7, column=0, columnspan=2, pady=10)
-
-    # --- ABA 2: M/G/1 e Prioridades ---
-    def create_tab_mg1(self):
-        tab = ttk.Frame(self.notebook)
-        # Título alterado para foco apenas no M/G/1
-        self.notebook.add(tab, text="M/G/1 Simples")
-        
-        input_frame = ttk.Frame(tab, padding=10)
-        input_frame.pack(fill='x')
-        
-        ttk.Label(input_frame, text="Modelo M/G/1 (Fórmula de Pollaczek-Khinchine)").grid(row=0, column=0, columnspan=2, sticky='w', pady=5)
-        
-        ttk.Separator(input_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky='ew', pady=5)
-
-        # Campos de Entrada
-        # λ
-        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=2, column=0, sticky='w')
-        ent_lam = ttk.Entry(input_frame)
-        ent_lam.insert(0, "8")
-        ent_lam.grid(row=2, column=1, padx=5, pady=2)
-
-        # μ
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=3, column=0, sticky='w')
-        ent_mi = ttk.Entry(input_frame)
-        ent_mi.insert(0, "10")
-        ent_mi.grid(row=3, column=1, padx=5, pady=2)
-
-        # Variância (σ²)
-        ttk.Label(input_frame, text="Variância (σ²):").grid(row=4, column=0, sticky='w')
-        ent_var = ttk.Entry(input_frame)
-        ent_var.insert(0, "0.005")
-        ent_var.grid(row=4, column=1, padx=5, pady=2)
-
-        out_text = self.create_output_area(tab)
-
-        def run():
-            # Captura os três parâmetros necessários para M/G/1 Simples
-            lam = float(ent_lam.get())
-            mi = float(ent_mi.get())
-            var = float(ent_var.get())
+            # 4. Garante que campos obrigatórios não estão vazios
+            if not value_str:
+                raise ValueError(f"O parâmetro '{name}' é obrigatório.")
             
-            # Chama a classe Mg1 para M/G/1 simples (lam_list=None é o default)
-            modelo = Mg1(lam=lam, mi=mi, var=var)
-            modelo.mg1_print()
-            
-        # O botão de cálculo agora está na linha 5
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=5, column=0, columnspan=2, pady=10)
-    
-    def create_tab_mms_priority_preemptive(self):
-        """
-        Cria a aba para o modelo M/M/s com Prioridade Sem Interrupção, aceitando λ total e proporções.
-        """
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="MMS Prioridade (Com Interrupção)")
-        
-        input_frame = ttk.Frame(tab, padding=10)
-        input_frame.pack(fill='x')
-        
-        # --- ENTRADAS DO USUÁRIO ---
-        
-        ttk.Label(input_frame, text="Taxa de Chegada Total (λ):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        ent_lam_total = ttk.Entry(input_frame)
-        ent_lam_total.insert(0, "10.0")
-        ent_lam_total.grid(row=0, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        ent_mi = ttk.Entry(input_frame)
-        ent_mi.insert(0, "4.0")
-        ent_mi.grid(row=1, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "2")
-        ent_s.grid(row=2, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Proporções de Chegada (%, sep. por vírgula):").grid(row=3, column=0, sticky='w', padx=5, pady=5)
-        ent_proporcoes = ttk.Entry(input_frame, width=50)
-        ent_proporcoes.insert(0, "40, 35, 25") 
-        ent_proporcoes.grid(row=3, column=1, padx=5, pady=5)
-        
-        # --- LÓGICA DE EXECUÇÃO ---
-
-        out_text = self.create_output_area(tab)
-        
-        def run():
-            """
-            Função principal de execução. Usa o nome consistente para o cálculo.
-            """
+            # 5. Converte para float/int (para os campos MU, K, S, N, lambda, t)
             try:
-                # 1. Captura e conversão das entradas
-                lambda_total = float(ent_lam_total.get())
-                mi = float(ent_mi.get())
-                servidores = int(ent_s.get())
-                proporcoes_str = ent_proporcoes.get()
-
-                # 2. Chamada da função de cálculo com NOME CONSISTENTE
-                resultados = calcular_mms_prioridade_com_interrupcao(
-                    lambda_total=lambda_total,
-                    mi=mi,
-                    servidores=servidores,
-                    proporcoes_str=proporcoes_str
-                )
+                # Trata vírgula como decimal para campos de valor único
+                clean_value_str = value_str.replace(',', '.') 
                 
-                # 3. Formatação e Exibição dos Resultados
-                
-                if "Erro" in resultados:
-                    print(f"ERRO DE CÁLCULO: {resultados['Erro']}")
-                    return
-
-                rho_valor = resultados['Classe 1']['Taxa de ocupação total (ρ)']
-                
-                print("\n" + "="*50)
-                print("--- RESULTADOS MMS PRIORIDADE SEM INTERRUPÇÃO ---")
-                print(f"λ Total: {lambda_total:.4f} | µ: {mi:.4f} | Servidores: {servidores}")
-                print(f"Capacidade (sμ): {servidores * mi:.4f} | Ocupação (ρ): {rho_valor:.4f}")
-                print("="*50)
-
-                for classe_nome, vals in resultados.items():
-                    print(f"\n## {classe_nome}")
-                    
-                    lambda_i = vals['Taxa de chegada da classe (λi)']
-                    print(f"**Taxa de Chegada (λi): {lambda_i:.6f}**")
-                    
-                    for key, value in vals.items():
-                        if key.startswith("Taxa de chegada") or key.endswith("(ρ)"):
-                            continue
-                        
-                        key_limpa = key.strip().replace('\n', '')
-                        print(f"* {key_limpa}: {value:.6f}")
-                            
-                    print("---")
-                
-            except ValueError as e:
-                print(f"ERRO DE ENTRADA: Verifique se todos os campos são números válidos. Detalhe: {e}")
-            except NameError:
-                print("ERRO: A função 'calcular_mms_prioridade_com_interrupcao' não foi encontrada. Certifique-se de que foi importada/definida.")
-            except Exception as e:
-                print(f"Ocorreu um erro inesperado: {e}")
-
-
-        ttk.Button(input_frame, text="Calcular Prioridade", command=lambda: self.capture_output(run, out_text)).grid(row=4, column=0, columnspan=2, pady=10)
-    
-    def create_tab_mms_priority_nonpreemptive(self):
-        """
-        Cria a aba para o modelo M/M/s com Prioridade Sem Interrupção, aceitando λ total e proporções.
-        """
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="MMS Prioridade (Sem Interrupção)")
-        
-        input_frame = ttk.Frame(tab, padding=10)
-        input_frame.pack(fill='x')
-        
-        # --- ENTRADAS DO USUÁRIO ---
-        
-        ttk.Label(input_frame, text="Taxa de Chegada Total (λ):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        ent_lam_total = ttk.Entry(input_frame)
-        ent_lam_total.insert(0, "10.0")
-        ent_lam_total.grid(row=0, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        ent_mi = ttk.Entry(input_frame)
-        ent_mi.insert(0, "4.0")
-        ent_mi.grid(row=1, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "2")
-        ent_s.grid(row=2, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Proporções de Chegada (%, sep. por vírgula):").grid(row=3, column=0, sticky='w', padx=5, pady=5)
-        ent_proporcoes = ttk.Entry(input_frame, width=50)
-        ent_proporcoes.insert(0, "40, 35, 25") 
-        ent_proporcoes.grid(row=3, column=1, padx=5, pady=5)
-        
-        # --- LÓGICA DE EXECUÇÃO ---
-
-        out_text = self.create_output_area(tab)
-        
-        def run():
-            """
-            Função principal de execução. Usa o nome consistente para o cálculo.
-            """
-            try:
-                # 1. Captura e conversão das entradas
-                lambda_total = float(ent_lam_total.get())
-                mi = float(ent_mi.get())
-                servidores = int(ent_s.get())
-                proporcoes_str = ent_proporcoes.get()
-
-                # 2. Chamada da função de cálculo com NOME CONSISTENTE
-                resultados = calcular_mms_prioridade_sem_interrupcao(
-                    lambda_total=lambda_total,
-                    mi=mi,
-                    servidores=servidores,
-                    proporcoes_str=proporcoes_str
-                )
-                
-                # 3. Formatação e Exibição dos Resultados
-                
-                if "Erro" in resultados:
-                    print(f"ERRO DE CÁLCULO: {resultados['Erro']}")
-                    return
-
-                rho_valor = resultados['Classe 1']['Taxa de ocupação total (ρ)']
-                
-                print("\n" + "="*50)
-                print("--- RESULTADOS MMS PRIORIDADE SEM INTERRUPÇÃO ---")
-                print(f"λ Total: {lambda_total:.4f} | µ: {mi:.4f} | Servidores: {servidores}")
-                print(f"Capacidade (sμ): {servidores * mi:.4f} | Ocupação (ρ): {rho_valor:.4f}")
-                print("="*50)
-
-                for classe_nome, vals in resultados.items():
-                    print(f"\n## {classe_nome}")
-                    
-                    lambda_i = vals['Taxa de chegada da classe (λi)']
-                    print(f"**Taxa de Chegada (λi): {lambda_i:.6f}**")
-                    
-                    for key, value in vals.items():
-                        if key.startswith("Taxa de chegada") or key.endswith("(ρ)"):
-                            continue
-                        
-                        key_limpa = key.strip().replace('\n', '')
-                        print(f"* {key_limpa}: {value:.6f}")
-                            
-                    print("---")
-                
-            except ValueError as e:
-                print(f"ERRO DE ENTRADA: Verifique se todos os campos são números válidos. Detalhe: {e}")
-            except NameError:
-                print("ERRO: A função 'calcular_mms_prioridade_sem_interrupcao' não foi encontrada. Certifique-se de que foi importada/definida.")
-            except Exception as e:
-                print(f"Ocorreu um erro inesperado: {e}")
-
-
-        ttk.Button(input_frame, text="Calcular Prioridade", command=lambda: self.capture_output(run, out_text)).grid(row=4, column=0, columnspan=2, pady=10)
-
-    # --- ABA 3: Fila Finita (K) ---
-    def create_tab_finite_k(self):
-        """
-        Cria a aba para modelos de Capacidade Finita (M/M/s/K).
-        """
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Capacidade Finita (K)")
-        
-        input_frame = ttk.Frame(tab, padding=10)
-        input_frame.pack(fill='x')
-        
-        # Linha 0: Taxa de Chegada (λ)
-        ttk.Label(input_frame, text="Taxa de Chegada (λ):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        ent_lam = ttk.Entry(input_frame)
-        ent_lam.insert(0, "10.0") 
-        ent_lam.grid(row=0, column=1, padx=5, pady=5)
-        
-        # Linha 1: Taxa de Atendimento (μ)
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        ent_mi = ttk.Entry(input_frame)
-        ent_mi.insert(0, "4.0") 
-        ent_mi.grid(row=1, column=1, padx=5, pady=5)
-        
-        # Linha 2: Número de Servidores (s)
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "3") # Exemplo M/M/3/K
-        ent_s.grid(row=2, column=1, padx=5, pady=5)
-
-        # Linha 3: Capacidade do Sistema (K)
-        ttk.Label(input_frame, text="Capacidade do Sistema (K):").grid(row=3, column=0, sticky='w', padx=5, pady=5)
-        ent_k = ttk.Entry(input_frame)
-        ent_k.insert(0, "5") # Exemplo K=5
-        ent_k.grid(row=3, column=1, padx=5, pady=5)
-        
-        # Linha 4: Botão (Posição ajustada)
-        # Linha 5: Placeholder para futuras entradas de Pn, Pw>t, etc.
-
-        out_text = self.create_output_area(tab)
-        
-        def run():
-            # Captura e validação das entradas
-            try:
-                l = float(ent_lam.get())
-                m = float(ent_mi.get())
-                s = int(ent_s.get())
-                k = int(ent_k.get())
-
-                if s < 1 or k < 1 or m <= 0 or l < 0:
-                    raise ValueError("Parâmetros inválidos. s e K devem ser >= 1, μ > 0, λ >= 0.")
-                if k < s:
-                    raise ValueError(f"A Capacidade K ({k}) deve ser maior ou igual ao número de Servidores s ({s}).")
-
-                # Nota: O modelo Mmsk que revisamos suporta s=1, então Mm1k é redundante
-                # se a Mmsk for robusta. Usaremos apenas Mmsk.
-                modelo = Mmsk(lam=l, mi=m, s=s, k=k)
-                
-                # Chama a função que calcula as métricas e imprime no console
-                modelo.resultado() 
-
-            except ValueError as e:
-                # Captura exceções da classe Mmsk ou erros de entrada
-                print(f"ERRO DE ENTRADA/CÁLCULO: {e}")
-            except NameError:
-                print("ERRO: A classe 'Mmsk' não foi encontrada. Certifique-se de que foi importada corretamente.")
-            except Exception as e:
-                print(f"Ocorreu um erro inesperado: {e}")
-
-
-        # Botão Calcular, usando a linha 4 para o grid
-        ttk.Button(input_frame, text="Calcular M/M/s/K", command=lambda: self.capture_output(run, out_text)).grid(row=4, column=0, columnspan=2, pady=10)
-
-    # --- ABA 4: População Finita (N) ---
-    def create_tab_finite_n(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="População Finita (N)")
-        
-        input_frame = ttk.Frame(tab, padding=10)
-        input_frame.pack(fill='x')
-        
-        ttk.Label(input_frame, text="λ por cliente:").grid(row=0, column=0, sticky='w')
-        ent_lam = ttk.Entry(input_frame)
-        ent_lam.insert(0, "0.1")
-        ent_lam.grid(row=0, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Taxa de Atendimento (μ):").grid(row=1, column=0, sticky='w')
-        ent_mi = ttk.Entry(input_frame)
-        ent_mi.insert(0, "0.5")
-        ent_mi.grid(row=1, column=1, padx=5, pady=5)
-        
-        ttk.Label(input_frame, text="Número de Servidores (s):").grid(row=2, column=0, sticky='w')
-        ent_s = ttk.Entry(input_frame)
-        ent_s.insert(0, "2")
-        ent_s.grid(row=2, column=1, padx=5, pady=5)
-
-        ttk.Label(input_frame, text="Tamanho da População (N):").grid(row=3, column=0, sticky='w')
-        ent_n = ttk.Entry(input_frame)
-        ent_n.insert(0, "5")
-        ent_n.grid(row=3, column=1, padx=5, pady=5)
-        
-        out_text = self.create_output_area(tab)
-        
-        def run():
-            # Limpa o output antes de cada cálculo
-            print("\n"*100)
-            
-            try:
-                l = float(ent_lam.get())
-                m = float(ent_mi.get())
-                s = int(ent_s.get())
-                n_pop = int(ent_n.get())
-                
-                # --- LÓGICA DE INSTANCIAÇÃO DE CLASSE RESTAURADA ---
-                
-                if s == 1:
-                    # Tenta usar a classe específica M/M/1/N se ela existir
-                    try:
-                        modelo = Mm1n(lam_por_cliente=l, mi=m, n_pop=n_pop)
-                        modelo.resultado() # Assume que Mm1n tem o método resultado()
-                    except NameError:
-                        # Caso Mm1n não esteja definido, usa a Mmsn generalista (s=1)
-                        modelo = Mmsn(lam_por_cliente=l, mi=m, s=s, n_pop=n_pop)
-                        modelo.resultado()
-                else:
-                    # Usa M/M/s/N para s > 1
-                    modelo = Mmsn(lam_por_cliente=l, mi=m, s=s, n_pop=n_pop)
-                    modelo.resultado() # Chama o método que imprime o resultado (definido acima)
-
+                if name in ["K", "s", "N", "n"]:
+                    args[name] = int(clean_value_str)
+                    if args[name] < 0 and name != "n": raise ValueError(f"'{name}' deve ser inteiro >= 0.")
+                else: # lambda, mu, t
+                    args[name] = float(clean_value_str)
+                    if args[name] < 0: raise ValueError(f"'{name}' deve ser >= 0.")
             except ValueError:
-                print(f"\nERRO DE ENTRADA: Certifique-se de que todos os campos de entrada contêm números válidos.")
-            except Exception as e:
-                # Captura erros de cálculo ou instanciação
-                print(f"\nOcorreu um erro durante o processamento: {e}")
+                target_type = "inteiro" if name in ["K", "s", "N", "n"] else "decimal"
+                raise ValueError(f"'{name}' inválido. Deve ser um número {target_type}. Use vírgula para decimais.")
 
-        ttk.Button(input_frame, text="Calcular", command=lambda: self.capture_output(run, out_text)).grid(row=4, column=0, columnspan=2, pady=10)
+        # 🌟 Correção Crítica para os modelos M/M/x: Renomear 'lambda' para 'lmbda'
+        if "lambda" in args:
+            args["lmbda"] = args.pop("lambda")
+            
+        return args
 
-    # --- ABA 5: Resolver Lista ---
-    def create_tab_lista_exercicios(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Resolver Lista Exercícios")
-        
-        desc = ttk.Label(tab, text="Esta função executa os testes definidos em 'ListaExercicios.py'\ne exibe os resultados abaixo.", justify="center", padding=20)
-        desc.pack()
-        
-        out_text = self.create_output_area(tab)
-        
-        # Botão Grande para rodar a lista
-        btn_run_list = ttk.Button(tab, text="RODAR LISTA DE EXERCÍCIOS", command=lambda: self.capture_output(rodar_testes, out_text))
-        btn_run_list.pack(pady=10, ipadx=20, ipady=10)
-    
-    
+    # (Funções format_output e calculate permanecem iguais, pois a lógica crítica foi ajustada em parse_inputs)
+
+    def format_output(self, results: Dict[str, Any]) -> str:
+        output = []
+        friendly_names = {
+            "rho": "Utilização (ρ)", "p0": "Prob. 0 no Sistema (P0)", "L": "No. Médio no Sistema (L)",
+            "Lq": "No. Médio na Fila (Lq)", "W": "Tempo Médio no Sistema (W)", "Wq": "Tempo Médio na Fila (Wq)",
+            "lambda_eff": "Taxa Efetiva (λ_eff)", "pK": "P(N=K) / P(Bloqueio)",
+            "pn": f"Prob. de N={results.get('n_input', 'n')}",
+            "P(W>t)": f"Prob. W > {results.get('t_input', 't')}", "P(Wq>t)": f"Prob. Wq > {results.get('t_input', 't')}",
+            "cs2": "Coef. de Variação² (Cs²)", "E[S]": "Tempo Médio de Serviço (E[S])", "E[S^2]": "E[S²]",
+        }
+        for name in self.OPTIONAL_FIELDS:
+            if name in self.input_vars and self.input_vars[name].get().strip():
+                try:
+                    # Tratamento de decimal para exibição de input
+                    results[f"{name}_input"] = int(self.input_vars[name].get().strip()) if name == 'n' else float(self.input_vars[name].get().strip().replace(',', '.'))
+                except ValueError:
+                    results[f"{name}_input"] = self.input_vars[name].get().strip()
+
+        for key, value in results.items():
+            if key in ["n_input", "t_input", "lambda_total", "service_in_progress", "L_operational"]:
+                continue
+            if key == "per_class":
+                output.append("\n--- Métricas por Classe (Prioridade) ---")
+                for item in value:
+                    class_output = [f"  - Prioridade {item.get('priority', 'N/A')}:"]
+                    for k, v in item.items():
+                        if k not in ["priority", "lambda_cum", "L_cum", "Lq_cum", "base_factor", "L_class", "Lq_class"]:
+                             k_name = friendly_names.get(k, k.replace('_', ' ').title())
+                             try:
+                                 class_output.append(f"    - {k_name.ljust(15)}: {v:.6f}")
+                             except Exception:
+                                 class_output.append(f"    - {k_name.ljust(15)}: {v}")
+                    output.append("\n".join(class_output))
+                continue
+            
+            display_key = friendly_names.get(key, key.replace('_', ' ').title())
+            try:
+                if isinstance(value, float):
+                    output.append(f"• **{display_key.ljust(30)}**: {value:.6f}")
+                elif isinstance(value, int):
+                    output.append(f"• **{display_key.ljust(30)}**: {value}")
+                else:
+                    output.append(f"• **{display_key.ljust(30)}**: {value}")
+            except Exception:
+                output.append(f"• **{display_key.ljust(30)}**: {value}")
+        return "\n".join(output)
+
+    def calculate(self):
+        model_name = self.selected_model.get()
+        model_func = self.model_funcs.get(model_name)
+
+        if not model_func:
+            messagebox.showerror("Erro", "Modelo selecionado não encontrado.")
+            return
+
+        try:
+            args = self.parse_inputs() 
+            results = model_func(**args) 
+
+            formatted_output = f"*** Modelo: {model_name} ***\n\n"
+            formatted_output += self.format_output(results)
+
+            self.result_text.configure(state="normal")
+            self.result_text.delete("1.0", "end")
+            self.result_text.insert("end", formatted_output)
+            self.result_text.configure(state="disabled")
+
+        except ValueError as e:
+            messagebox.showerror("Erro de Parâmetro/Estabilidade", str(e))
+        except Exception as e:
+            messagebox.showerror("Erro de Cálculo Inesperado", f"Ocorreu um erro interno. {e}")
+
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = FilaApp(root)
-    root.mainloop()
+    app = QueueingApp()
+    app.mainloop()
